@@ -1,0 +1,5 @@
+node_modules/
+# Never commit data captured from a real Home Assistant: it holds names and locations.
+dev/private/
+*.log
+.DS_Store

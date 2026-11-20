@@ -1,0 +1,12 @@
+{
+  // The panel class moved over unchanged in phase 1, so it starts under looser rules.
+  // Tightening it to the main config is tracked in ROADMAP.md.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": false,
+    "noImplicitAny": false,
+    "noUnusedLocals": false
+  },
+  "include": ["custom_components/homenodes/frontend/homenodes-panel.js", "types/**/*.d.ts"],
+  "exclude": []
+}

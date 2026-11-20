@@ -1,0 +1,21 @@
+{
+  // Type checking only: the JavaScript in the repo is exactly what ships, there is no build.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noFallthroughCasesInSwitch": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // No @types packages: the few Node built-ins the tests use are declared in types/node.d.ts.
+    "types": [],
+    "skipLibCheck": true
+  },
+  "include": ["custom_components/homenodes/frontend/**/*.js", "types/**/*.d.ts", "dev/**/*.js", "tests/**/*.js", "scripts/**/*.mjs"],
+  // The panel class is checked under looser rules for now; see tsconfig.panel.json and ROADMAP.md.
+  "exclude": ["custom_components/homenodes/frontend/homenodes-panel.js", "dev/private"]
+}

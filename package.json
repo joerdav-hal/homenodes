@@ -1,0 +1,15 @@
+{
+  "name": "homenodes",
+  "private": true,
+  "description": "Every Home Assistant automation as a live node graph.",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test tests/",
+    "typecheck": "npx --yes typescript@5.9.3 -p tsconfig.json && npx --yes typescript@5.9.3 -p tsconfig.panel.json",
+    "check": "node scripts/check.mjs",
+    "dev": "python3 -m http.server 8770 --bind 127.0.0.1",
+    "ci": "npm run check && npm test && npm run typecheck"
+  }
+}

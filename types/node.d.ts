@@ -25,9 +25,11 @@ declare module "node:assert/strict" {
 
 declare module "node:fs" {
   export function readFileSync(path: string | URL, encoding: "utf8"): string;
-  export function writeFileSync(path: string | URL, data: string): void;
+  export function readFileSync(path: string | URL): Buffer;
+  export function writeFileSync(path: string | URL, data: string | Uint8Array): void;
   export function readdirSync(path: string | URL, options: { recursive: true }): string[];
   export function statSync(path: string | URL): { isFile(): boolean };
+  export function mkdirSync(path: string | URL, options?: { recursive?: boolean }): void;
 }
 
 declare module "node:fs/promises" {
@@ -63,3 +65,18 @@ declare module "node:child_process" {
 }
 
 declare const process: { exitCode?: number; argv: string[]; env: Record<string, string | undefined>; stdout: { write(s: string): void } };
+
+declare module "node:zlib" {
+  export function inflateSync(data: Uint8Array): Buffer;
+  export function deflateSync(data: Uint8Array, options?: { level?: number }): Buffer;
+}
+
+interface Buffer extends Uint8Array {
+  readUInt32BE(offset: number): number;
+  writeUInt32BE(value: number, offset: number): number;
+  write(text: string, offset: number, encoding: "latin1"): number;
+  toString(encoding?: "latin1", start?: number, end?: number): string;
+  copy(target: Uint8Array, start: number): number;
+  subarray(start?: number, end?: number): Buffer;
+}
+declare const Buffer: { alloc(size: number): Buffer; from(data: Uint8Array): Buffer; concat(list: Uint8Array[]): Buffer };

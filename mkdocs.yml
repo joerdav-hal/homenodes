@@ -1,0 +1,69 @@
+site_name: HomeNodes
+site_description: Every Home Assistant automation and script, drawn as a live node graph.
+site_url: https://joerdav.github.io/homenodes/
+repo_url: https://github.com/joerdav/homenodes
+repo_name: joerdav/homenodes
+edit_uri: edit/main/docs/
+copyright: MIT licence
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installing: install.md
+      - Options: options.md
+  - Guide:
+      - Reading the map: guide/map.md
+      - Looking closer: guide/inspector.md
+      - History and activity heat: guide/history.md
+      - Health and Up next: guide/health.md
+  - Help:
+      - Troubleshooting: troubleshooting.md
+      - Privacy and security: privacy.md
+  - Project:
+      - Contributing: development.md
+      - Changelog: changelog.md
+
+theme:
+  name: material
+  # The panel makes no outside requests, so neither does its documentation's text: system fonts.
+  font: false
+  icon:
+    logo: material/graph-outline
+    repo: fontawesome/brands/github
+  favicon: assets/favicon.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      accent: amber
+      toggle: { icon: material/weather-night, name: Dark theme }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue grey
+      accent: amber
+      toggle: { icon: material/weather-sunny, name: Light theme }
+  features:
+    - navigation.sections
+    - navigation.footer
+    - navigation.top
+    - content.action.edit
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.keys
+  - pymdownx.tabbed: { alternate_style: true }
+  - pymdownx.snippets: { base_path: ["."], check_paths: true }
+
+# A broken link or image fails the build (mkdocs build --strict), in CI and before every deploy.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn

@@ -5,24 +5,35 @@ import { spawn } from "node:child_process";
 const CANDIDATES = [process.env.CHROME, "google-chrome-stable", "google-chrome", "chromium", "chromium-browser"].filter(Boolean);
 
 /**
- * @param {string} url
- * @param {number | null} [budget] Virtual milliseconds to run for; null runs in real time, until the load event.
+ * Chrome's stdout for these arguments, from the first Chrome that starts.
+ * @param {string[]} args
  * @returns {Promise<string>}
  */
-export const dump = async (url, budget = 120000) => {
+const run = async (args) => {
   for (const bin of /** @type {string[]} */ (CANDIDATES)) {
     const out = await new Promise((resolve) => {
-      const time = budget == null ? [] : [`--virtual-time-budget=${budget}`];
-      const p = spawn(bin, ["--headless=new", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--window-size=1440,988", ...time, "--dump-dom", url]);
-      let dom = "";
-      p.stdout.on("data", (d) => { dom += d; });
+      const p = spawn(bin, ["--headless=new", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", ...args]);
+      let text = "";
+      p.stdout.on("data", (d) => { text += d; });
       p.on("error", () => resolve(null));
-      p.on("close", () => resolve(dom));
+      p.on("close", () => resolve(text));
     });
     if (out !== null) return out;
   }
   throw new Error(`No Chrome found; tried ${CANDIDATES.join(", ")}. Set CHROME to its path.`);
 };
+
+/**
+ * @param {string} url
+ * @param {number | null} [budget] Virtual milliseconds to run for; null runs in real time, until the load event.
+ * @returns {Promise<string>}
+ */
+export const dump = (url, budget = 120000) =>
+  run(["--window-size=1440,988", ...(budget == null ? [] : [`--virtual-time-budget=${budget}`]), "--dump-dom", url]);
+
+/** A PNG of the page after a few virtual seconds. @param {string} url @param {string} file @param {[number, number]} size */
+export const screenshot = (url, file, [w, h]) =>
+  run([`--window-size=${w},${h}`, "--virtual-time-budget=8000", `--screenshot=${file}`, url]);
 
 /** The JSON a page left in <pre id="...">, or null. @param {string} dom @param {string} id */
 export const result = (dom, id) => {

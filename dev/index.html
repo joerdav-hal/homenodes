@@ -16,7 +16,8 @@ body.dark { --primary-background-color: #111111; --card-background-color: #1c1c1
 //   ?tz=<IANA zone> (Home Assistant's) ?timeformat=24|am_pm|language|system ?showtime=server|local ?noblueprints
 //   The integration's options: ?controls=0 ?grouping=area|label|category|tag ?heatdays=<n> ?hide=<label id>,…
 //   ?hostile (names that try to be markup, script and more) ?check (click through and report; see browser-check.mjs)
-//   ?bench (time loading, repaints and panning; see browser-bench.mjs)
+//   ?bench (time loading, repaints and panning; see browser-bench.mjs) ?height=<px> (headless
+//   screenshots: Chrome's viewport is shorter than the image it saves)
 import { HOSTILE, makeHostile, makeHouse } from "./fake-house.js";
 window.__errors = [];
 addEventListener("error", (e) => window.__errors.push(String(e.message)));
@@ -106,6 +107,7 @@ if (opt) el.panel = { config: {
   controls: q.get("controls") !== "0", default_grouping: q.get("grouping") || "area", heat_days: Number(q.get("heatdays") || 7),
   hidden_labels: q.get("hide") ? q.get("hide").split(",") : [], _panel_custom: { name: "homenodes-panel" },
 } };
+if (q.has("height")) el.style.height = `${Number(q.get("height"))}px`;
 const loadStart = performance.now();
 el.hass = mk();
 el.narrow = innerWidth < 870;

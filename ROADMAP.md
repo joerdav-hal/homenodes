@@ -75,11 +75,23 @@ Debt carried forward:
 - [x] Right-to-left names placed in a sentence are wrapped in Unicode isolates, so they can't
   reverse the words around them.
 
-## 5. Scale
+## 5. Scale (done)
 
-- [ ] Performance budgets at 50, 500 and 2,000 automations (`?copies=` in the harness).
-- [ ] Tokenise templates instead of searching for every known entity in each one.
-- [ ] Batch repaints to animation frames, and skip what is off screen.
+- [x] Performance budgets, checked in CI: `scripts/bench.mjs` for graph, layout and conditions at
+  2,000 automations, and `scripts/browser-bench.mjs` for loading, state changes, the clock,
+  panning, zooming and focusing at 500, in headless Chrome. `--large` adds 2,000 there, which
+  needs a GPU; headless software painting can't keep up with that much.
+- [x] Templates are split into dotted words in one pass instead of searched for every known
+  entity, and zoning reads each node's own wires instead of every wire. Graph building at
+  2,000 automations went from 121 ms to 26 ms, and now grows in line with the house.
+- [x] State updates are painted once per animation frame. Off-screen nodes and wires get
+  `display: none` and catch up when they scroll back. Label measurements are cached, and an
+  unchanged label isn't measured at all.
+- [x] Below 0.2× zoom, idle wires and node details are hidden: at that size they were a
+  hairball, and only wires carrying current or a run are worth seeing.
+
+At 2,000 automations, in a browser with a GPU (before → after): loading 1,269 → 716 ms, a state
+change 24 → 5.6 ms, the clock tick 34 → 7 ms, focusing an automation 461 → about 220 ms.
 
 ## 6. Releases
 

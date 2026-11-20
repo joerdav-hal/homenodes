@@ -15,8 +15,19 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/ja
  * @returns {Promise<{ port: number, close(): void }>}
  */
 export const serve = (port) => new Promise((ready) => {
+  // Headless Chrome dumps the page at its load event; a page that is timing itself in real time
+  // holds that open with an image from /__hold until it fetches /__release.
+  /** @type {import("node:http").Response[]} */
+  let held = [];
   const server = createServer(async (req, res) => {
     const path = decodeURIComponent(new URL(req.url || "/", "http://localhost").pathname);
+    if (path === "/__hold") { held.push(res); return; }
+    if (path === "/__release") {
+      for (const r of held) r.writeHead(204, { "Cache-Control": "no-store" }).end();
+      held = [];
+      res.writeHead(204).end();
+      return;
+    }
     let file = normalize(join(ROOT, path));
     if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
     if (file.endsWith(sep) || path.endsWith("/")) file = join(file, "index.html");

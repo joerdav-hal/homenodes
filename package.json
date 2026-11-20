@@ -14,6 +14,7 @@
     "strings": "node scripts/strings.mjs",
     "dev": "node scripts/serve.mjs",
     "ci": "npm run check && npm test && npm run typecheck",
-    "browser": "node scripts/browser-check.mjs"
+    "browser": "node scripts/browser-check.mjs",
+    "bench": "node scripts/bench.mjs && node scripts/browser-bench.mjs"
   }
 }

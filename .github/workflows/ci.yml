@@ -26,6 +26,10 @@ jobs:
         run: node --test tests/frontend/*.test.js
       - name: Hostile names render as text, in headless Chrome
         run: node scripts/browser-check.mjs
+      - name: Performance budgets
+        run: |
+          node scripts/bench.mjs
+          node scripts/browser-bench.mjs
       - name: Type check
         run: |
           npx --yes typescript@5.9.3 -p tsconfig.json

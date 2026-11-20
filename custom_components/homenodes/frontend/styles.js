@@ -16,7 +16,7 @@ export const CSS = `
   --in: #F2A63E; --out: #46C3E2; --pass: #5DCB8B; --block: #F06D6D;
   --shadow: 0 12px 32px rgba(0,0,0,.5); }
 * { box-sizing: border-box; }
-[hidden], .folded, .gone { display: none !important; }
+[hidden], .folded, .gone, .cull { display: none !important; }
 .ico { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .num { font-variant-numeric: tabular-nums; }
 
@@ -127,6 +127,8 @@ svg.map.panning { cursor: grabbing; }
 /* Zoomed out: components become plain blocks, and only state shows. */
 .far .node text, .far .node .ico, .far .node .port, .far .node .heat { display: none; }
 .far .node .body { stroke-width: 1.5; }
+.tiny .wire:not(.live):not(.hot):not(.on) { display: none; }
+.tiny .node > :not(.body) { display: none; }
 .far .wire:not(.live):not(.hot) { opacity: .2; }
 .far .node.active .body { fill: color-mix(in srgb, var(--in) 45%, var(--surface)); stroke: var(--in); }
 .far .node.recent .body { fill: color-mix(in srgb, var(--in) 22%, var(--surface)); }

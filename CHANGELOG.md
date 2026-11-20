@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Much faster on large installs: at 2,000 automations a state change costs a quarter of what it
+  did, loading half, and graph building a fifth. Off-screen parts of the map are skipped until
+  you pan to them.
+- Zoomed far out, only wires carrying current or a run are drawn, so a large map reads as
+  activity rather than a hairball.
+
 - "Run actions" asks first, since it skips the conditions.
 - Live template conditions are capped at 50, limited to 3 seconds of rendering each, and
   dropped while the browser tab is in the background. Those over the cap are listed in Health.

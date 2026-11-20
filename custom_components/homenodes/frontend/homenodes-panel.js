@@ -55,6 +55,8 @@ class HomeNodesPanel extends HTMLElement {
     this._mode = "live";
     this._narrow = false;
     this._latest = new Latest();
+    /** Fitted label text by width, size, weight and text. @type {Map<string, string>} */
+    this._fitted = new Map();
     // In a background tab nobody is watching: drop every subscription, and catch up on return.
     this._onVisibility = () => {
       if (!this._ready) return;
@@ -68,7 +70,7 @@ class HomeNodesPanel extends HTMLElement {
     this.toggleAttribute("dark", !!hass?.themes?.darkMode);
     this._applyLocale(hass);
     if (!this._started && this.isConnected) this._start();
-    else if (this._ready && this._mode === "live") { this._syncStates(); this._evalSoon(); }
+    else if (this._ready && this._mode === "live") { this._syncSoon(); this._evalSoon(); }
   }
   get hass() { return this._hass; }
   set narrow(v) { this._narrow = v; if (this._menuBtn) this._menuBtn.hidden = !v; }
@@ -179,6 +181,7 @@ class HomeNodesPanel extends HTMLElement {
     this._graph = graph;
     this._nodes = new Map(graph.nodes.map((n) => [n.id, n]));
     this._edges = graph.edges;
+    this._wireOf = new Map(graph.edges.map((e) => [e.id, e]));
     for (const n of graph.nodes) n.wires = [];
     for (const e of graph.edges) {
       e.a = this._nodes.get(e.src); e.b = this._nodes.get(e.dst);
@@ -346,6 +349,8 @@ class HomeNodesPanel extends HTMLElement {
   // ------------------------------------------------------------ drawing
 
   _drawGraph() {
+    this._font = null;
+    this._fitted.clear();
     this._wireLayer.replaceChildren();
     this._nodeLayer.replaceChildren();
     this._clLayer.replaceChildren();
@@ -375,26 +380,40 @@ class HomeNodesPanel extends HTMLElement {
     this._route();
     this._syncStates(true);
   }
+  // Reading the font costs a style recalculation, so it is read once per drawing, not per label.
   _measure(text, px, weight = 400) {
     this._ctx ||= document.createElement("canvas").getContext("2d");
-    this._ctx.font = `${weight} ${px}px ${getComputedStyle(this).fontFamily || "sans-serif"}`;
+    this._font ||= getComputedStyle(this).fontFamily || "sans-serif";
+    const font = `${weight} ${px}px ${this._font}`;
+    if (this._ctx.font !== font) this._ctx.font = font;
     return this._ctx.measureText(text).width;
   }
   _fitText(text, max, px, weight) {
     text = String(text ?? "");
-    if (this._measure(text, px, weight) <= max) return text;
-    let lo = 0, hi = text.length;
-    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (this._measure(`${text.slice(0, mid)}…`, px, weight) <= max) lo = mid; else hi = mid - 1; }
-    return `${text.slice(0, lo)}…`;
+    const key = `${max}|${px}|${weight}|${text}`;
+    const hit = this._fitted.get(key);
+    if (hit !== undefined) return hit;
+    let out = text;
+    if (this._measure(text, px, weight) > max) {
+      let lo = 0, hi = text.length;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (this._measure(`${text.slice(0, mid)}…`, px, weight) <= max) lo = mid; else hi = mid - 1; }
+      out = `${text.slice(0, lo)}…`;
+    }
+    if (this._fitted.size > 50000) this._fitted.clear();
+    this._fitted.set(key, out);
+    return out;
   }
   _text(parent, cls, x, y, str, max, px, weight) {
     const t = s("text", { class: cls, x, y }, parent);
     t.textContent = this._fitText(str, max, px, weight);
+    /** @type {any} */ (t)._raw = str;
     t.dataset.max = max; t.dataset.px = px; t.dataset.w = weight || 400;
     return t;
   }
   _setText(t, str) {
-    if (t) t.textContent = this._fitText(str, Number(t.dataset.max), Number(t.dataset.px), Number(t.dataset.w));
+    if (!t || t._raw === str) return;
+    t._raw = str;
+    t.textContent = this._fitText(str, Number(t.dataset.max), Number(t.dataset.px), Number(t.dataset.w));
   }
 
   _drawNode(n) {
@@ -498,11 +517,18 @@ class HomeNodesPanel extends HTMLElement {
     }
     for (const c of this._collapsed) this._paintGroup(this._group(c), states);
   }
+  // Home Assistant can hand over new states many times a frame; paint once per frame, and not at
+  // all in a background tab, which gets no frames.
+  _syncSoon() {
+    if (this._syncRaf) return;
+    this._syncRaf = requestAnimationFrame(() => { this._syncRaf = null; if (this._mode === "live") this._syncStates(); });
+  }
   _repaintOwners() { for (const n of this._nodes.values()) if (isOwner(n)) this._paint(n, this._states()[n.id]); }
 
   _paint(n, st) {
     const g = n.el;
     if (!g) return;
+    if (n.culled) { n.stale = true; if (n.kind === "entity") this._paintWires(n, st); return; }
     const ref = this._ref();
     if (isOwner(n)) {
       const off = st?.state === "off" && n.kind === "automation";
@@ -536,13 +562,19 @@ class HomeNodesPanel extends HTMLElement {
       g.classList.toggle("active", active);
       g.classList.toggle("unavail", (!st && !n.snapshot) || st?.state === "unavailable");
       this._setText(n.stateEl, n.missing ? tr("Doesn't exist") : !st && n.snapshot ? tr("Made when it runs") : capital(fmtState(st, ref)));
-      for (const e of n.wires) if (e.a === n) e.el?.classList.toggle("live", active && this._states()[e.dst]?.state !== "off");
+      this._paintWires(n, st);
     } else if (n.kind === "time" && n.schedule) {
       const next = this._mode === "live" ? nextAt(n.schedule, new Date(), this._hass.states, this._tz) : null;
       this._setText(n.subEl, !next ? "" : n.schedule.type === "time" ? capital(inFmt(next.getTime() - Date.now())) : `${hhmm(next)}, ${inFmt(next.getTime() - Date.now())}`);
     }
   }
+  // Wires from something that's on carry current; a wire can show while its source is off screen.
+  _paintWires(n, st) {
+    const active = !!st && ACTIVE.has(st.state);
+    for (const e of n.wires) if (e.a === n) e.el?.classList.toggle("live", active && this._states()[e.dst]?.state !== "off");
+  }
   _paintGroup(g, states) {
+    if (g.culled) { g.stale = true; return; }
     let on = 0, autos = 0, ran = 0;
     const ref = this._ref();
     for (const m of g.members) {
@@ -698,7 +730,7 @@ class HomeNodesPanel extends HTMLElement {
   _ownerFor(ctx, targetId) {
     const owners = [this._runs.get(ctx?.id), this._runs.get(ctx?.parent_id)].filter(Boolean).flatMap((r) => r.owners);
     if (!owners.length) return null;
-    return owners.slice().reverse().find((o) => this._edges.some((e) => e.src === o && e.dst === targetId)) || owners[owners.length - 1];
+    return owners.slice().reverse().find((o) => this._wire(o, targetId)) || owners[owners.length - 1];
   }
 
   _onRun(ev, kind) {
@@ -712,7 +744,7 @@ class HomeNodesPanel extends HTMLElement {
     if (kind === "script") {
       this._flash(n);
       const owner = this._ownerFor({ parent_id: ctx.parent_id }, id) || run.owners.find((o) => o !== id);
-      const e = owner && this._edges.find((x) => x.src === owner && x.dst === id);
+      const e = owner && this._wire(owner, id);
       if (e) this._pulse(e, "action");
     } else this._runVisual(n, ev.data.source, Date.now(), true);
   }
@@ -744,7 +776,7 @@ class HomeNodesPanel extends HTMLElement {
   _changeVisual(n, stateChanged, owner) {
     if (stateChanged) for (const e of n.wires) if (e.a === n && e.role !== "action") this._pulse(e, e.role === "trigger" ? "trigger" : "condition");
     if (!owner || owner === n.id) return;
-    let e = this._edges.find((x) => x.src === owner && x.dst === n.id);
+    let e = this._wire(owner, n.id);
     if (!e && this._nodes.has(owner)) e = this._learn(owner, n.id);
     if (e) this._pulse(e, "action");
   }
@@ -754,17 +786,20 @@ class HomeNodesPanel extends HTMLElement {
     const target = `svc:${ev.data?.domain}.${ev.data?.service}`;
     if (!this._nodes.has(target)) return;
     const owner = this._ownerFor(ev.context, target);
-    const e = owner && this._edges.find((x) => x.src === owner && x.dst === target);
+    const e = owner && this._wire(owner, target);
     if (e) this._pulse(e, "action");
   }
 
+  /** The wire from src to dst, if drawn; ids are "src>dst", as graph.js makes them. */
+  _wire(src, dst) { return this._wireOf?.get(`${src}>${dst}`); }
   // A templated target only shows itself at run time; draw it once seen.
   _learn(src, dst) {
     const a = this._nodes.get(src), b = this._nodes.get(dst);
-    const e = { id: `${src}>${dst}`, src, dst, role: "action", learned: true, a, b };
+    const e = /** @type {any} */ ({ id: `${src}>${dst}`, src, dst, role: "action", learned: true, a, b });
     e.el = s("path", { class: "wire action learned" }, this._wireLayer);
     a.wires.push(e); b.wires.push(e);
     this._edges.push(e);
+    this._wireOf.set(e.id, e);
     this._route();
     this._applyFocus();
     return e;
@@ -780,7 +815,7 @@ class HomeNodesPanel extends HTMLElement {
   }
 
   _pulse(e, kind) {
-    if (!e.el || e.el.classList.contains("folded") || document.hidden) return;
+    if (!e.el || e.culled || e.el.classList.contains("folded") || document.hidden) return;
     // Reduced motion: the wire lights up, nothing travels.
     if (this._reduced) { e.el.classList.add("hot"); clearTimeout(e.hotT); e.hotT = setTimeout(() => e.el.classList.remove("hot"), 1500); return; }
     const len = e.el.getTotalLength();
@@ -828,7 +863,45 @@ class HomeNodesPanel extends HTMLElement {
     this._gridRect.setAttribute("height", `${100 / k + 100}%`);
     // Semantic zoom: far out, components become blocks and only state shows.
     this._svg.classList.toggle("far", k < 0.42);
+    // Further out still, idle wires are a hairball nobody can follow; only current and runs show.
+    this._svg.classList.toggle("tiny", k < 0.2);
     this._scaleZoneTitles();
+    this._cullSoon();
+  }
+
+  // Off-screen nodes and wires get display: none, so the browser neither styles nor paints them;
+  // their labels catch up when they come back. While focused only the flow is drawn, so only it is
+  // shown; the rest keep the state they had for the view that leaving focus goes back to.
+  _cullSoon() {
+    if (this._cullRaf) return;
+    this._cullRaf = requestAnimationFrame(() => { this._cullRaf = null; this._cull(); });
+  }
+  _cull() {
+    if (this._tweenRaf && !this._focusing) return;
+    const r = this._svg?.getBoundingClientRect();
+    const keep = this._focusing ? this._focusSet : null;
+    const all = !r || r.width < 50 || r.height < 50;
+    const { x, y, k } = this._view;
+    const pad = 240 / k;
+    const x0 = -x / k - pad, y0 = -y / k - pad, x1 = (r ? r.width - x : 0) / k + pad, y1 = (r ? r.height - y : 0) / k + pad;
+    const sees = (ax, ay, bx, by) => all || (bx >= x0 && ax <= x1 && by >= y0 && ay <= y1);
+    const states = this._states();
+    for (const n of [...this._nodes.values(), ...this._groups.values()]) {
+      if (keep && !keep.has(n.id)) continue;
+      const out = !keep && !sees(n.x, n.y, n.x + n.w, n.y + n.h);
+      if (out === !!n.culled) continue;
+      n.culled = out;
+      n.el.classList.toggle("cull", out);
+      if (!out && n.stale) { n.stale = false; if (n.kind === "group") this._paintGroup(n, states); else this._paint(n, states[n.id]); }
+    }
+    for (const e of this._edges) {
+      if (keep && !(keep.has(e.src) && keep.has(e.dst))) continue;
+      const a = e.ra || e.a, b = e.rb || e.b;
+      const out = !keep && !sees(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x + a.w, b.x + b.w), Math.max(a.y + a.h, b.y + b.h));
+      if (out === !!e.culled) continue;
+      e.culled = out;
+      e.el.classList.toggle("cull", out);
+    }
   }
   // The view that shows these boxes, beside the drawer and above the history bar; null if no size yet.
   _fitView(boxes, top = 100, maxK = 1.2) {
@@ -1129,6 +1202,7 @@ class HomeNodesPanel extends HTMLElement {
     }
     this._focusSet = new Set(targets.keys());
     this._applyFocus();
+    this._cull();
     const box = (ids) => ids.map((id) => { const [x, y] = targets.get(id), m = this._nodes.get(id); return { x, y, w: m.w, h: m.h }; });
     let view = this._fitView(box([...targets.keys()]), 40, 1.1);
     if (view && view.k < 0.85) view = this._fitView(box([...targets.keys()].filter((id) => Math.abs(targets.cols.get(id)) <= 1)), 40, 1.1);
@@ -1175,13 +1249,13 @@ class HomeNodesPanel extends HTMLElement {
       if (view) { this._view = { k: v0.k + (view.k - v0.k) * t, x: v0.x + (view.x - v0.x) * t, y: v0.y + (view.y - v0.y) * t }; this._applyView(); }
     };
     // Hidden pages get no animation frames, so they jump straight there.
-    if (!dur || document.hidden || this._reduced) { frame(1); if (!this._focusing) this._placeClusterLabels(); return; }
+    if (!dur || document.hidden || this._reduced) { frame(1); if (!this._focusing) this._placeClusterLabels(); this._cullSoon(); return; }
     const t0 = performance.now();
     const step = (now) => {
       const p = Math.min(1, (now - t0) / dur);
       frame(p);
       if (p < 1) this._tweenRaf = requestAnimationFrame(step);
-      else { this._tweenRaf = null; if (!this._focusing) this._placeClusterLabels(); }
+      else { this._tweenRaf = null; if (!this._focusing) this._placeClusterLabels(); this._cullSoon(); }
     };
     this._tweenRaf = requestAnimationFrame(step);
   }

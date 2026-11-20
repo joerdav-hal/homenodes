@@ -35,7 +35,7 @@ declare module "node:fs/promises" {
 }
 
 declare module "node:http" {
-  interface Response { writeHead(status: number, headers?: Record<string, string>): Response; end(body?: string | Uint8Array): void }
+  export interface Response { writeHead(status: number, headers?: Record<string, string>): Response; end(body?: string | Uint8Array): void }
   export function createServer(handler: (req: { url?: string }, res: Response) => void): {
     listen(port: number, host: string, ready: () => void): void;
     address(): { port: number };

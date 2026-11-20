@@ -7,6 +7,7 @@ body.dark { --primary-background-color: #111111; --card-background-color: #1c1c1
 #ctl { position: fixed; bottom: 12px; right: 12px; z-index: 9; font: 12px sans-serif; background: #000a; color: #fff; padding: 6px 8px; border-radius: 6px; display: flex; gap: 6px; align-items: center; }
 </style></head>
 <body class="dark">
+<script>if (new URLSearchParams(location.search).has("bench")) document.write('<img src="/__hold" alt="" hidden>');</script>
 <div id="ctl"><button id="dark">Theme</button><button id="play">Replay activity</button><span id="status"></span></div>
 <script type="module">
 // Runs the panel outside Home Assistant: a fake hass object over the made-up house in fake-house.js.
@@ -15,6 +16,7 @@ body.dark { --primary-background-color: #111111; --card-background-color: #1c1c1
 //   ?tz=<IANA zone> (Home Assistant's) ?timeformat=24|am_pm|language|system ?showtime=server|local ?noblueprints
 //   The integration's options: ?controls=0 ?grouping=area|label|category|tag ?heatdays=<n> ?hide=<label id>,…
 //   ?hostile (names that try to be markup, script and more) ?check (click through and report; see browser-check.mjs)
+//   ?bench (time loading, repaints and panning; see browser-bench.mjs)
 import { HOSTILE, makeHostile, makeHouse } from "./fake-house.js";
 window.__errors = [];
 addEventListener("error", (e) => window.__errors.push(String(e.message)));
@@ -104,6 +106,7 @@ if (opt) el.panel = { config: {
   controls: q.get("controls") !== "0", default_grouping: q.get("grouping") || "area", heat_days: Number(q.get("heatdays") || 7),
   hidden_labels: q.get("hide") ? q.get("hide").split(",") : [], _panel_custom: { name: "homenodes-panel" },
 } };
+const loadStart = performance.now();
 el.hass = mk();
 el.narrow = innerWidth < 870;
 (q.has("wrap") ? document.body.appendChild(document.createElement("div")) : document.body).append(el);
@@ -121,7 +124,8 @@ document.getElementById("play").onclick = async () => {
   }
 };
 (async () => {
-  while (!el._ready) await new Promise((r) => setTimeout(r, 50));
+  while (!el._ready) await new Promise((r) => setTimeout(r, 5));
+  const loaded = performance.now() - loadStart;
   if (q.has("select")) el._select(q.get("select"), false, null, true);
   if (q.has("center")) {
     const n = el._nodes.get(q.get("center")), r = el._svg.getBoundingClientRect(), k = Number(q.get("zoom") || 1);
@@ -133,8 +137,33 @@ document.getElementById("play").onclick = async () => {
   if (q.get("open") === "history") el._enterHistory();
   if (q.get("open") === "heat") el._setOpt("heat", true);
   if (q.has("check")) await check();
+  if (q.has("bench")) await bench(loaded);
   document.body.dataset.ready = "1";
 })();
+
+// Script time for the things that happen often, in ms: best of several, so noise only adds.
+async function bench(loaded) {
+  const best = (fn, n = 5) => { let b = Infinity; for (let i = 0; i < n; i++) { const t = performance.now(); fn(); b = Math.min(b, performance.now() - t); } return b; };
+  const light = Object.keys(states).find((id) => id.startsWith("light."));
+  let flip = 0;
+  const r = {
+    load: loaded,
+    elements: el.shadowRoot.querySelectorAll("*").length,
+    // A state change as Home Assistant delivers it, then the condition pass it schedules.
+    stateChange: best(() => { states = { ...states, [light]: { ...states[light], state: flip++ % 2 ? "on" : "off" } }; el.hass = mk(); el._syncStates(); el._evalAll(); }),
+    // Panning to each corner and back: culling, and catching up on what was off screen.
+    sweep: best(() => { const v = el._view; for (const [dx, dy] of [[-3000, 0], [0, -3000], [3000, 3000], [0, 0]]) { el._view = { ...v, x: v.x + dx, y: v.y + dy }; el._applyView(); el._cull(); } el._view = v; el._applyView(); el._cull(); el._svg.getBoundingClientRect(); }, 3),
+    clockTick: best(() => el._tickClock()),
+    pan: best(() => { for (let i = 0; i < 20; i++) { el._view = { ...el._view, x: el._view.x + 7 }; el._applyView(); el._svg.getBoundingClientRect(); } }, 3) / 20,
+    zoomOut: best(() => { el._view = { ...el._view, k: 0.3 }; el._applyView(); getComputedStyle(el._svg).opacity; el._view = { ...el._view, k: 1 }; el._applyView(); getComputedStyle(el._svg).opacity; }, 3),
+    select: best(() => { el._select("automation.kitchen_motion_lights", false, null, true); el._select(null, false, null, true); }, 3),
+  };
+  const out = document.createElement("pre");
+  out.id = "bench";
+  out.textContent = JSON.stringify(r);
+  document.body.append(out);
+  await fetch("/__release");
+}
 
 // Visits every automation and script, some entities, Health and Up next, and each grouping, then
 // reports anything that isn't one of the panel's own elements, any on* attribute, and any error.

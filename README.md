@@ -82,7 +82,8 @@ to replay. Its query parameters (`?theme=light`, `?select=<entity id>`, `?open=h
 
 Option parameters (`?controls=0`, `?grouping=label`, `?heatdays=3`, `?hide=lighting`) stand in
 for the integration's options, and `?hostile` swaps every name for one that tries to be markup,
-script or a layout breaker. `npm run browser` runs both houses through headless Chrome.
+script or a layout breaker. `npm run browser` runs both houses through headless Chrome, and
+`npm run bench` checks the performance budgets (`?bench&copies=26` times 500 automations by hand).
 
 Never commit data captured from a real Home Assistant: it holds names and locations.
 `dev/private/` is ignored for local experiments.

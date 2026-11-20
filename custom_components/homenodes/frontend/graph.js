@@ -123,6 +123,8 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
   const devById = new Map(devices.map((d) => [d.id, d]));
   const areaNames = new Map(areas.map((a) => [a.area_id, a.name]));
   const known = [...new Set([...stateOf.keys(), ...regByEid.keys()])].sort((a, b) => b.length - a.length);
+  // Results come out in this order (longest first), as they did when every id was searched for.
+  const rank = new Map(known.map((eid, i) => [eid, i]));
   /** @param {EntityRegistryEntry | undefined} r */
   const areaIdOf = (r) => r && (r.area_id || (r.device_id ? devById.get(r.device_id)?.area_id : null));
   const live = entities.filter((e) => !e.disabled_by);
@@ -164,20 +166,20 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
     else if (ROLE_RANK[role] > ROLE_RANK[e.role]) e.role = role;
   };
 
-  // Known entity ids mentioned anywhere in a template.
+  // Known entity ids mentioned anywhere in a template: each run of dotted words is split into its
+  // neighbouring pairs, so states.light.porch.state finds light.porch. One pass, not one per id.
   /** @param {string} str */
   const scanTemplate = (str) => {
-    /** @type {string[]} */
-    const found = [];
-    for (const eid of known) {
-      let i = str.indexOf(eid);
-      while (i !== -1) {
-        const before = str[i - 1], after = str[i + eid.length];
-        if (!(before && /[a-z0-9_]/.test(before)) && !(after && /[a-z0-9_]/.test(after))) { found.push(eid); break; }
-        i = str.indexOf(eid, i + 1);
+    /** @type {Set<string>} */
+    const found = new Set();
+    for (const run of str.match(/[a-z0-9_]+(?:\.[a-z0-9_]+)+/g) || []) {
+      const words = run.split(".");
+      for (let i = 0; i + 1 < words.length; i++) {
+        const eid = `${words[i]}.${words[i + 1]}`;
+        if (rank.has(eid)) found.add(eid);
       }
     }
-    return found;
+    return [...found].sort((a, b) => /** @type {number} */ (rank.get(a)) - /** @type {number} */ (rank.get(b)));
   };
   /** @param {any} v @returns {string[]} */
   const resolve = (v) => {
@@ -374,6 +376,13 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
   /** @type {Map<string, string>} */
   const categoryName = new Map();
   for (const [scope, cats] of Object.entries(categories)) for (const c of cats || []) categoryName.set(`${scope}:${c.category_id}`, c.name);
+  // Each node's wires, in drawing order, so zoning looks at a node's own wires and not all of them.
+  /** @type {Map<string, GraphEdge[]>} */
+  const touching = new Map();
+  for (const e of edgeList) for (const id of e.src === e.dst ? [e.src] : [e.src, e.dst]) {
+    const list = touching.get(id);
+    if (list) list.push(e); else touching.set(id, [e]);
+  }
   // The area most of what an owner changes is in, else most of what it listens to.
   /** @param {GraphNode} n */
   const targetArea = (n) => {
@@ -381,7 +390,7 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
       // Maps, not objects: an area may be called anything, "__proto__" included.
       /** @type {Map<string, number>} */
       const counts = new Map();
-      for (const e of edgeList) {
+      for (const e of touching.get(n.id) || []) {
         const o = out ? (e.src === n.id ? nodes.get(e.dst) : null) : (e.dst === n.id ? nodes.get(e.src) : null);
         if (o?.area) counts.set(o.area, (counts.get(o.area) || 0) + 1);
       }
@@ -408,7 +417,7 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
     if (n.cluster) continue;
     /** @type {Map<string, number>} */
     const counts = new Map();
-    for (const e of edgeList) {
+    for (const e of touching.get(n.id) || []) {
       const o = e.src === n.id ? nodes.get(e.dst) : e.dst === n.id ? nodes.get(e.src) : null;
       if (o?.cluster) counts.set(o.cluster, (counts.get(o.cluster) || 0) + 1);
     }

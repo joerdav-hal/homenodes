@@ -154,3 +154,25 @@ test("automations with a hidden label are left out, as the panel leaves out thei
   assert.equal(h.edges.some((e) => e.src === "automation.front_door" || e.dst === "automation.front_door"), false);
   assert.ok(h.nodes.some((n) => n.id === "automation.kitchen_motion_lights"));
 });
+
+test("templates find entity ids however they're written, and nothing that only contains one", () => {
+  const states = ["light.porch", "light.porch_2", "sensor.temp", "binary_sensor.door"].map((entity_id) => ({ entity_id, state: "on", attributes: {}, last_changed: "", last_updated: "" }));
+  const tpl = [
+    "{{ states.light.porch.state == 'on' }}",
+    "{{ is_state('sensor.temp', '3') and states('binary_sensor.door') }}",
+    "{{ states.light.porch_2b.state }} {{ xlight.porch }} {{ light.porchy }}",
+    "{{ expand('LIGHT.PORCH') }}",
+  ].join(" ");
+  const g = buildGraph({ states, entities: [], devices: [], areas: [], configs: { "automation.t": { triggers: [], conditions: [{ condition: "template", value_template: tpl }], actions: [] } } });
+  assert.deepEqual(g.resolve(tpl).sort(), ["binary_sensor.door", "light.porch", "sensor.temp"]);
+});
+
+test("template scanning stays linear: 2,000 ids against a long template", () => {
+  const states = Array.from({ length: 2000 }, (_, i) => ({ entity_id: `sensor.s${i}`, state: "1", attributes: {}, last_changed: "", last_updated: "" }));
+  const tpl = Array.from({ length: 300 }, (_, i) => `states('sensor.s${i * 5}')`).join(" + ");
+  const g = buildGraph({ states, entities: [], devices: [], areas: [], configs: {} });
+  const t = performance.now();
+  for (let i = 0; i < 50; i++) g.resolve(`{{ ${tpl} }}`);
+  assert.equal(g.resolve(`{{ ${tpl} }}`).length, 300);
+  assert.ok(performance.now() - t < 500, `${Math.round(performance.now() - t)} ms`);
+});

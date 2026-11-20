@@ -8,10 +8,15 @@ import { SIZE } from "./constants.js";
 
 const COL = 340, GAP_Y = 16;
 
+/** @typedef {{ name: string | undefined, members: GraphNode[], w: number, h: number }} Block */
+
+// Gaps between zones: room for the plate's padding and the title above it.
+const ZONE_GAP_X = 200, ZONE_GAP_Y = 240;
+
 /**
  * Each cluster is a block of columns: what feeds the automations, the automations (and the
  * scripts they call), then what they change. Within a column, order follows the neighbours.
- * Nodes with a fixed position keep it, and any others are placed beside what they connect to.
+ * Nodes with a fixed position keep it; new ones join their own zone (see placeNew).
  * @param {GraphNode[]} nodes
  * @param {Pick<GraphEdge, "src" | "dst" | "role">[]} edges
  * @param {Map<string, [number, number]>} [fixed]
@@ -27,8 +32,18 @@ export function layout(nodes, edges, fixed = new Map()) {
     return !f;
   });
   if (!free.length) return;
-  if (free.length < nodes.length) return placeNear(nodes, free, edges, byId);
+  const rank = ranks(nodes, edges, byId);
+  if (free.length < nodes.length) return placeNew(nodes, free, edges, byId, rank);
+  shelve(blocksOf(nodes, edges, rank), 0, 0);
+}
 
+/**
+ * Which column each node goes in: 0 for what feeds automations, 1 for automations and scripts,
+ * 2 for scripts they call, and one past whatever writes to it for everything else.
+ * @param {GraphNode[]} nodes @param {Pick<GraphEdge, "src" | "dst" | "role">[]} edges @param {Map<string, GraphNode>} byId
+ * @returns {Map<string, number>}
+ */
+function ranks(nodes, edges, byId) {
   /** @param {GraphNode | undefined} n */
   const owner = (n) => n?.kind === "automation" || n?.kind === "script";
   const called = new Set(edges.filter((e) => byId.get(e.src)?.kind === "automation" && byId.get(e.dst)?.kind === "script").map((e) => e.dst));
@@ -40,22 +55,30 @@ export function layout(nodes, edges, fixed = new Map()) {
     const writers = edges.filter((e) => e.dst === n.id && e.role === "action").map((e) => rank.get(e.src) || 1);
     rank.set(n.id, writers.length ? Math.max(...writers) + 1 : 0);
   }
+  return rank;
+}
+
+/**
+ * One block per cluster, its members placed relative to the block's top left.
+ * @param {GraphNode[]} nodes @param {Pick<GraphEdge, "src" | "dst">[]} edges @param {Map<string, number>} rank
+ * @returns {Block[]}
+ */
+function blocksOf(nodes, edges, rank) {
   /** @type {Map<string, string[]>} */
   const nbrs = new Map(nodes.map((n) => [n.id, []]));
   for (const e of edges) { nbrs.get(e.src)?.push(e.dst); nbrs.get(e.dst)?.push(e.src); }
-
   /** @type {Map<string | undefined, GraphNode[]>} */
   const clusters = new Map();
   for (const n of nodes) {
     if (!clusters.has(n.cluster)) clusters.set(n.cluster, []);
     clusters.get(n.cluster)?.push(n);
   }
-  /** @type {{ name: string | undefined, members: GraphNode[], w: number, h: number }[]} */
+  /** @type {Block[]} */
   const blocks = [];
   for (const [name, members] of clusters) {
     /** @type {GraphNode[][]} */
     const cols = [];
-    for (const n of members) (cols[/** @type {number} */ (rank.get(n.id))] ||= []).push(n);
+    for (const n of members) (cols[rank.get(n.id) ?? 0] ||= []).push(n);
     const dense = cols.filter(Boolean);
     dense.forEach((c) => c.sort((a, b) => (a.alias || a.label).localeCompare(b.alias || b.label)));
     /** @type {Map<string, number>} */
@@ -81,48 +104,90 @@ export function layout(nodes, edges, fixed = new Map()) {
     });
     blocks.push({ name, members, w: dense.length * COL - (COL - 236), h: H });
   }
-  // Shelf-pack the blocks, tallest first, into a roughly landscape sheet.
+  return blocks;
+}
+
+/**
+ * Shelf-pack blocks, tallest first, into a roughly landscape sheet starting at (x0, y0).
+ * @param {Block[]} blocks @param {number} x0 @param {number} y0 @param {number} [width] The sheet's width, if one is set.
+ */
+function shelve(blocks, x0, y0, width) {
   blocks.sort((a, b) => b.h - a.h);
-  const area = blocks.reduce((s, b) => s + (b.w + 200) * (b.h + 240), 0);
-  const maxW = Math.max(...blocks.map((b) => b.w), Math.sqrt(area * 1.8));
+  const area = blocks.reduce((s, b) => s + (b.w + ZONE_GAP_X) * (b.h + ZONE_GAP_Y), 0);
+  const maxW = width ?? Math.max(...blocks.map((b) => b.w), Math.sqrt(area * 1.8));
   let x = 0, y = 0, rowH = 0;
   for (const b of blocks) {
-    if (x > 0 && x + b.w > maxW) { x = 0; y += rowH + 240; rowH = 0; }
-    for (const n of b.members) { n.x = Math.round(n.x + x); n.y = Math.round(n.y + y); }
-    x += b.w + 200;
+    if (x > 0 && x + b.w > maxW) { x = 0; y += rowH + ZONE_GAP_Y; rowH = 0; }
+    for (const n of b.members) { n.x = Math.round(n.x + x + x0); n.y = Math.round(n.y + y + y0); }
+    x += b.w + ZONE_GAP_X;
     rowH = Math.max(rowH, b.h);
   }
 }
 
 /**
- * New nodes beside what they connect to, then nudged until nothing overlaps.
+ * New nodes join their own zone, below what's there, in the column their role belongs in (or
+ * beside the zone member they connect to); zones below and alongside move down to make room.
+ * New zones are laid out as fresh blocks under everything. Saved positions are otherwise kept.
  * @param {GraphNode[]} nodes
  * @param {GraphNode[]} free
- * @param {Pick<GraphEdge, "src" | "dst">[]} edges
+ * @param {Pick<GraphEdge, "src" | "dst" | "role">[]} edges
  * @param {Map<string, GraphNode>} byId
+ * @param {Map<string, number>} rank
  */
-function placeNear(nodes, free, edges, byId) {
-  for (const n of free) {
-    /** @type {([GraphNode | undefined, number] | null)[]} */
-    const ends = edges.map((e) => (e.src === n.id ? [byId.get(e.dst), -1] : e.dst === n.id ? [byId.get(e.src), 1] : null));
-    const placed = /** @type {[GraphNode, number][]} */ (ends.filter((p) => p?.[0]?.pinned));
-    if (placed.length) {
-      n.x = placed.reduce((s, [o, side]) => s + o.x + side * COL, 0) / placed.length;
-      n.y = placed.reduce((s, [o]) => s + o.y, 0) / placed.length;
-    } else {
-      const maxY = Math.max(...nodes.filter((o) => o.pinned).map((o) => o.y + o.h), 0);
-      n.x = 0; n.y = maxY + 300;
-    }
+function placeNew(nodes, free, edges, byId, rank) {
+  /** @type {Map<string | undefined, Box>} */
+  const zone = new Map();
+  for (const n of nodes) {
+    if (!n.pinned) continue;
+    const b = zone.get(n.cluster);
+    if (!b) { zone.set(n.cluster, { x: n.x, y: n.y, w: n.w, h: n.h }); continue; }
+    const x1 = Math.max(b.x + b.w, n.x + n.w), y1 = Math.max(b.y + b.h, n.y + n.h);
+    b.x = Math.min(b.x, n.x); b.y = Math.min(b.y, n.y); b.w = x1 - b.x; b.h = y1 - b.y;
   }
+  const sheet = [...zone.values()].reduce((s, b) => ({ x0: Math.min(s.x0, b.x), x1: Math.max(s.x1, b.x + b.w), y1: Math.max(s.y1, b.y + b.h) }), { x0: Infinity, x1: -Infinity, y1: -Infinity });
+
+  const orphans = free.filter((n) => !zone.has(n.cluster));
+  const joiners = free.filter((n) => zone.has(n.cluster)).sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+  /** @type {Map<string | undefined, number>} How far each zone's bottom moved down. */
+  const grew = new Map();
+  for (const n of joiners) {
+    const b = /** @type {Box} */ (zone.get(n.cluster));
+    const mate = edges.map((e) => (e.src === n.id ? byId.get(e.dst) : e.dst === n.id ? byId.get(e.src) : null))
+      .find((o) => o?.pinned && o.cluster === n.cluster);
+    const cols = Math.max(1, Math.round((b.w + COL - 236) / COL));
+    const col = Math.min(cols - 1, Math.max(0, (rank.get(n.id) ?? 0) - (cols < 3 ? 1 : 0)));
+    n.x = mate ? mate.x + ((rank.get(n.id) ?? 0) < (rank.get(mate.id) ?? 0) ? -COL : (rank.get(n.id) ?? 0) > (rank.get(mate.id) ?? 0) ? COL : 0) : b.x + col * COL;
+    n.x = Math.min(Math.max(n.x, b.x), b.x + b.w - n.w);
+    n.y = b.y + b.h + GAP_Y;
+    const before = b.y + b.h;
+    b.h += n.h + GAP_Y;
+    grew.set(n.cluster, (grew.get(n.cluster) || 0) + (b.y + b.h - before));
+  }
+  // Make room: whatever sits below a grown zone, and overlaps it side to side, moves down with it.
+  for (const [name, by] of [...grew].sort((a, b) => /** @type {Box} */ (zone.get(a[0])).y - /** @type {Box} */ (zone.get(b[0])).y)) {
+    const g = /** @type {Box} */ (zone.get(name));
+    const oldBottom = g.y + g.h - by;
+    for (const [other, o] of zone) {
+      if (other === name || o.y < oldBottom || o.x >= g.x + g.w + ZONE_GAP_X || o.x + o.w + ZONE_GAP_X <= g.x) continue;
+      o.y += by;
+      for (const n of nodes) if (n.cluster === other) n.y += by;
+    }
+    sheet.y1 = Math.max(sheet.y1, ...[...zone.values()].map((b) => b.y + b.h));
+  }
+  if (orphans.length) {
+    const width = Number.isFinite(sheet.x1) ? sheet.x1 - sheet.x0 : undefined;
+    shelve(blocksOf(orphans, edges, rank), Number.isFinite(sheet.x0) ? sheet.x0 : 0, Number.isFinite(sheet.y1) ? sheet.y1 + ZONE_GAP_Y : 0, width);
+  }
+  // Last, nudge new nodes off anything they still overlap.
   for (let it = 0; it < 200; it++) {
     let moved = false;
-    for (const a of free) {
+    for (const a of joiners) {
       for (const b of nodes) {
         if (a === b) continue;
         const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) + 24;
         const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) + GAP_Y;
         if (ox <= 0 || oy <= 0) continue;
-        a.y += a.y <= b.y ? -oy : oy;
+        a.y += oy;
         moved = true;
       }
     }

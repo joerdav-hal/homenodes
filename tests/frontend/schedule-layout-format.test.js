@@ -50,15 +50,81 @@ test("layout places every node without overlaps", () => {
   }
 });
 
-test("layout keeps fixed positions and fits new nodes in beside them", () => {
+/** Zone plates (padding 28, title 40 above) that overlap another zone's. @param {GraphNode[]} nodes */
+const zoneOverlaps = (nodes) => {
+  /** @type {Map<string | undefined, { x0: number, y0: number, x1: number, y1: number }>} */
+  const z = new Map();
+  for (const n of nodes) {
+    const b = z.get(n.cluster) || { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    z.set(n.cluster, { x0: Math.min(b.x0, n.x - 28), y0: Math.min(b.y0, n.y - 68), x1: Math.max(b.x1, n.x + n.w + 28), y1: Math.max(b.y1, n.y + n.h + 28) });
+  }
+  const list = [...z], hits = [];
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const [an, a] = list[i], [bn, b] = list[j];
+    if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) hits.push(`${an} × ${bn}`);
+  }
+  return hits;
+};
+/** Each zone's members relative to its first member, to show a zone moved only as a whole. @param {GraphNode[]} nodes @param {Set<string>} [skip] */
+const shapes = (nodes, skip = new Set()) => {
+  /** @type {Map<string | undefined, GraphNode>} */
+  const first = new Map();
+  /** @type {Record<string, [number, number]>} */
+  const out = {};
+  for (const n of nodes) {
+    if (skip.has(n.id)) continue;
+    if (!first.has(n.cluster)) first.set(n.cluster, n);
+    const f = /** @type {GraphNode} */ (first.get(n.cluster));
+    out[n.id] = [n.x - f.x, n.y - f.y];
+  }
+  return out;
+};
+/** A laid-out house, and the same house again with these node ids left unplaced. @param {string[]} unplaced @param {(h: any) => void} [change] */
+const relayout = (unplaced, change) => {
   const g = buildGraph(makeHouse({ now: now.getTime() }));
   layout(g.nodes, g.edges);
-  /** @type {Map<string, [number, number]>} */
-  const fixed = new Map(g.nodes.filter((n) => n.id !== "light.hall").map((n) => [n.id, [n.x, n.y]]));
-  const again = buildGraph(makeHouse({ now: now.getTime() }));
+  const fixed = new Map(g.nodes.filter((n) => !unplaced.includes(n.id)).map((n) => [n.id, /** @type {[number, number]} */ ([n.x, n.y])]));
+  const house = makeHouse({ now: now.getTime() });
+  change?.(house);
+  const again = buildGraph(house);
   layout(again.nodes, again.edges, fixed);
-  for (const n of again.nodes) if (n.id !== "light.hall") assert.deepEqual([n.x, n.y], fixed.get(n.id), n.id);
+  return { before: g, again, fixed };
+};
+
+test("a fresh layout has no overlapping cards or zones", () => {
+  const g = buildGraph(makeHouse({ now: now.getTime(), copies: 3 }));
+  layout(g.nodes, g.edges);
+  assert.equal(overlaps(g.nodes), 0);
+  assert.deepEqual(zoneOverlaps(g.nodes), []);
+});
+
+test("a new node joins its own zone, and zones keep their shape", () => {
+  const { before, again } = relayout(["light.hall", "automation.hall_light"]);
   assert.equal(overlaps(again.nodes), 0);
+  assert.deepEqual(zoneOverlaps(again.nodes), []);
+  const hall = before.nodes.filter((n) => n.cluster === "Hall" && n.id !== "light.hall" && n.id !== "automation.hall_light");
+  const x0 = Math.min(...hall.map((n) => n.x)), x1 = Math.max(...hall.map((n) => n.x + n.w));
+  for (const id of ["light.hall", "automation.hall_light"]) {
+    const n = /** @type {GraphNode} */ (again.nodes.find((m) => m.id === id));
+    assert.ok(n.x >= x0 - 1 && n.x + n.w <= x1 + 1, `${id} at x ${n.x}, outside Hall's ${x0}..${x1}`);
+  }
+  const skip = new Set(["light.hall", "automation.hall_light"]);
+  assert.deepEqual(shapes(again.nodes, skip), shapes(before.nodes, skip));
+});
+
+test("a new zone goes below everything, laid out as a block", () => {
+  const { before, again } = relayout([], (h) => {
+    h.states.push({ entity_id: "automation.shed_light", state: "on", attributes: { friendly_name: "[Shed] Shed light", id: "shed" }, last_changed: "", last_updated: "" });
+    h.areas.push({ area_id: "shed", name: "Shed" });
+    h.entities.push({ id: "reg_shed", entity_id: "automation.shed_light", area_id: "shed", device_id: null, disabled_by: null, labels: [], categories: {} });
+    h.configs["automation.shed_light"] = { id: "shed", alias: "[Shed] Shed light", triggers: [{ trigger: "state", entity_id: "binary_sensor.shed_door" }], actions: [{ action: "light.turn_on", target: { entity_id: "light.shed" } }] };
+  });
+  assert.equal(overlaps(again.nodes), 0);
+  assert.deepEqual(zoneOverlaps(again.nodes), []);
+  const bottom = Math.max(...before.nodes.map((n) => n.y + n.h));
+  const shed = /** @type {GraphNode} */ (again.nodes.find((n) => n.id === "automation.shed_light"));
+  assert.equal(shed.cluster, "Shed");
+  assert.ok(shed.y > bottom, `shed at ${shed.y}, above the old bottom ${bottom}`);
 });
 
 test("wirePath runs from the right edge of one box to the left edge of the next", () => {

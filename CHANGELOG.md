@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- New automations and entities join their own zone on a saved map, and the zones below move down
+  to make room, instead of being dropped at the bottom left where their zone's outline would
+  stretch across others. **⋯ → Tidy the layout** repairs a map saved before this.
+
 - A documentation site, with screenshots taken from the made-up house on every build.
 
 - Much faster on large installs: at 2,000 automations a state change costs a quarter of what it

@@ -12,6 +12,7 @@ body.dark { --primary-background-color: #111111; --card-background-color: #1c1c1
 // Runs the panel outside Home Assistant: a fake hass object over the made-up house in fake-house.js.
 // Query parameters: ?theme=light ?select=<id> ?open=health|upnext|history|heat ?copies=<n>
 //   ?center=<id>&zoom=<k> ?wrap (a height-less container, like HA's) ?nologbook ?shot (hide these controls)
+//   ?tz=<IANA zone> (Home Assistant's) ?timeformat=24|am_pm|language|system ?showtime=server|local ?noblueprints
 import { makeHouse } from "./fake-house.js";
 await import(`../custom_components/homenodes/frontend/homenodes-panel.js?t=${Date.now()}`);
 
@@ -28,6 +29,14 @@ const conn = {
       case "config/entity_registry/list": return house.entities;
       case "config/device_registry/list": return house.devices;
       case "config/area_registry/list": return house.areas;
+      case "config/label_registry/list": return house.labels;
+      case "config/category_registry/list": return house.categories[m.scope] || [];
+      case "blueprint/substitute": {
+        if (q.has("noblueprints")) throw { code: "unknown_command", message: "Unknown command." };
+        const hit = house.blueprintSubstitutions[JSON.stringify([m.domain, m.path, m.input])];
+        if (!hit) throw { code: "unknown_error", message: `Failed to load blueprint: Unable to find ${m.path}` };
+        return { substituted_config: hit };
+      }
       case "automation/config": { const c = house.configs[m.entity_id]; if (!c || c.error) throw { code: "not_found", message: "Entity not found" }; return { config: c }; }
       case "script/config": return { config: house.scriptConfigs[m.entity_id] };
       case "frontend/get_user_data": return { value: userData[m.key] ?? null };
@@ -72,7 +81,17 @@ const callService = async (domain, service, data) => {
   if (domain === "automation" && service === "trigger") { fire({ event_type: "automation_triggered", data: { entity_id: id, source: "action" }, context: ctx }); next = old.state; }
   fire({ event_type: "state_changed", data: { entity_id: id, old_state: old, new_state: { ...old, state: next, last_changed: new Date().toISOString(), context: ctx } }, context: ctx });
 };
-const mk = () => ({ states, connection: conn, themes: { darkMode: dark }, language: "en", user: { is_admin: true }, callService });
+// The editor's REST API only knows automations stored in automations.yaml, as in Home Assistant.
+const callApi = async (method, path) => {
+  const [, domain, id] = path.match(/^config\/(automation|script)\/config\/(.+)$/) || [];
+  const key = decodeURIComponent(id || "");
+  const known = domain === "automation" ? Object.values(house.configs).some((c) => c.id === key) && !house.yamlDefined.includes(key) : !!house.scriptConfigs[`script.${key}`];
+  if (method !== "GET" || !known) throw { status_code: 404, body: { message: "Resource not found" } };
+  return {};
+};
+const locale = { language: "en", time_format: q.get("timeformat") || "language", time_zone: q.get("showtime") || "local" };
+const config = { time_zone: q.get("tz") || Intl.DateTimeFormat().resolvedOptions().timeZone };
+const mk = () => ({ states, connection: conn, themes: { darkMode: dark }, language: "en", locale, config, user: { is_admin: true }, callService, callApi });
 el.hass = mk();
 el.narrow = innerWidth < 870;
 (q.has("wrap") ? document.body.appendChild(document.createElement("div")) : document.body).append(el);

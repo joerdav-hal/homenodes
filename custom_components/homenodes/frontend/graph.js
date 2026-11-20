@@ -8,6 +8,13 @@ import { asList, isRegId, isTemplate } from "./util.js";
 /** @typedef {import("../../../types/ha").EntityRegistryEntry} EntityRegistryEntry */
 /** @typedef {import("../../../types/ha").DeviceRegistryEntry} DeviceRegistryEntry */
 /** @typedef {import("../../../types/ha").AreaRegistryEntry} AreaRegistryEntry */
+/** @typedef {import("../../../types/ha").LabelRegistryEntry} LabelRegistryEntry */
+/** @typedef {import("../../../types/ha").CategoryRegistryEntry} CategoryRegistryEntry */
+/** @typedef {import("./blueprints.js").BlueprintUse} BlueprintUse */
+/**
+ * How automations and scripts are gathered into zones.
+ * @typedef {"area" | "label" | "category" | "tag"} Grouping
+ */
 
 /** @typedef {"automation" | "script" | "entity" | "service" | "virtual" | "device" | "time" | "group"} NodeKind */
 /** @typedef {"trigger" | "condition" | "action"} Role */
@@ -32,7 +39,8 @@ import { asList, isRegId, isTemplate } from "./util.js";
  * @property {boolean} [snapshot]
  * @property {string} [broken]
  * @property {string} [summary]
- * @property {Config} [config]
+ * @property {Config} [config] What it runs: for a blueprint automation, the expanded config.
+ * @property {BlueprintUse} [blueprint]
  * @property {Schedule | null} [schedule]
  * @property {string[]} [dtTriggers]
  * @property {string} [cluster]
@@ -89,6 +97,10 @@ import { asList, isRegId, isTemplate } from "./util.js";
  * @property {EntityRegistryEntry[]} entities
  * @property {DeviceRegistryEntry[]} devices
  * @property {AreaRegistryEntry[]} areas
+ * @property {LabelRegistryEntry[]} [labels]
+ * @property {Partial<Record<"automation" | "script", CategoryRegistryEntry[]>>} [categories] Category registries by scope.
+ * @property {Record<string, BlueprintUse>} [blueprints] Which entities use a blueprint, from expandBlueprints.
+ * @property {Grouping} [grouping] Defaults to "area".
  */
 
 const PROBE = "\u0000probe";
@@ -102,7 +114,7 @@ export const isLeaf = (x) => x && typeof x === "object" && (typeof (x.action || 
  * @param {GraphInput} input
  * @returns {Graph}
  */
-export function buildGraph({ states, configs, scriptConfigs, entities, devices, areas }) {
+export function buildGraph({ states, configs, scriptConfigs, entities, devices, areas, labels = [], categories = {}, blueprints = {}, grouping = "area" }) {
   const stateOf = new Map(states.map((s) => [s.entity_id, s]));
   const regById = new Map(entities.map((e) => [e.id, e]));
   const regByEid = new Map(entities.map((e) => [e.entity_id, e]));
@@ -335,6 +347,10 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
     outputs(cfg.sequence, eid);
     n.config = cfg;
   }
+  for (const [eid, use] of Object.entries(blueprints)) {
+    const n = nodes.get(eid);
+    if (n) n.blueprint = use;
+  }
 
   // scene.create makes these at run time, so they are only absent until it first runs.
   for (const id of runtimeScenes) {
@@ -342,7 +358,8 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
     if (n?.missing) { n.missing = false; n.snapshot = true; n.label = `${id.slice(6).replace(/_/g, " ")} (snapshot)`; }
   }
 
-  // Clusters: automations by their [Tag], entities by the one cluster they serve, else their area.
+  // Zones. Automations and scripts by the chosen grouping; entities by the one zone they
+  // serve, else their area, else the zone most of their neighbours are in.
   /** @param {string | null | undefined} tag */
   const areaFor = (tag) => {
     const t = (tag || "").toLowerCase();
@@ -350,9 +367,39 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
   };
   const list = [...nodes.values()];
   const edgeList = [...edges.values()];
-  for (const n of list) {
-    if (n.kind === "automation" || n.kind === "script") n.cluster = areaFor(n.tag) || n.tag || (n.kind === "script" ? "Scripts" : "Other");
-  }
+  const labelName = new Map(labels.map((l) => [l.label_id, l.name]));
+  /** @type {Map<string, string>} */
+  const categoryName = new Map();
+  for (const [scope, cats] of Object.entries(categories)) for (const c of cats || []) categoryName.set(`${scope}:${c.category_id}`, c.name);
+  // The area most of what an owner changes is in, else most of what it listens to.
+  /** @param {GraphNode} n */
+  const targetArea = (n) => {
+    for (const out of [true, false]) {
+      /** @type {Record<string, number>} */
+      const counts = {};
+      for (const e of edgeList) {
+        const o = out ? (e.src === n.id ? nodes.get(e.dst) : null) : (e.dst === n.id ? nodes.get(e.src) : null);
+        if (o?.area) counts[o.area] = (counts[o.area] || 0) + 1;
+      }
+      const top = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+      if (top) return top[0];
+    }
+    return null;
+  };
+  /** @param {GraphNode} n @returns {string} */
+  const ownerZone = (n) => {
+    const reg = regByEid.get(n.id);
+    switch (grouping) {
+      case "tag": return areaFor(n.tag) || n.tag || (n.kind === "script" ? "Scripts" : "Other");
+      case "label": return (reg?.labels || []).map((l) => labelName.get(l) || l).sort()[0] || "No label";
+      case "category": {
+        const id = reg?.categories?.[n.kind];
+        return (id && categoryName.get(`${n.kind}:${id}`)) || "No category";
+      }
+      default: return (reg?.area_id && areaNames.get(reg.area_id)) || areaFor(n.tag) || targetArea(n) || (n.kind === "script" ? "Scripts" : "No area");
+    }
+  };
+  for (const n of list) if (n.kind === "automation" || n.kind === "script") n.cluster = ownerZone(n);
   for (const n of list) {
     if (n.cluster) continue;
     /** @type {Record<string, number>} */

@@ -11,8 +11,9 @@ light up after it.
 
 ## What it shows
 
-- **Every automation and script** with the entities, devices, schedules and services they use,
-  grouped into zones by area.
+- **Every automation and script**, including ones made from blueprints, with the entities,
+  devices, schedules and services they use. They're grouped into zones by area, label,
+  category or a `[Tag]` in the name.
 - **Live state**: wires from anything that's on carry current, and each run sparks along the
   trigger that fired it and on to everything it changed.
 - **Why it did or didn't run**: conditions are checked live, and stored runs can be replayed on

@@ -25,10 +25,24 @@ export const inFmt = (ms) => {
   return hh < 24 ? `in ${hh}h ${m % 60}m` : `in ${Math.round(hh / 24)}d`;
 };
 
+/** @typedef {{ language?: string, hour12?: boolean, timeZone?: string }} TimeFormat */
+/** @type {TimeFormat} */
+let timeFormat = {};
+/**
+ * How clock times are written: the user's language, 12 or 24 hours, and the time zone to show.
+ * The panel sets this from Home Assistant's profile settings.
+ * @param {TimeFormat} format
+ */
+export const setTimeFormat = (format) => { timeFormat = { ...format }; };
+/** @param {Intl.DateTimeFormatOptions} options */
+const withFormat = (options) => ({ ...options, hour12: timeFormat.hour12, timeZone: timeFormat.timeZone });
+
 /** @param {string | number | Date} t */
-export const clock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+export const clock = (t) => new Date(t).toLocaleTimeString(timeFormat.language ?? [], withFormat({ hour: "2-digit", minute: "2-digit", second: "2-digit" }));
 /** @param {string | number | Date} t */
-export const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+export const hhmm = (t) => new Date(t).toLocaleTimeString(timeFormat.language ?? [], withFormat({ hour: "2-digit", minute: "2-digit" }));
+/** A weekday and time, for the history scrubber. @param {string | number | Date} t */
+export const dayTime = (t) => new Date(t).toLocaleString(timeFormat.language ?? [], withFormat({ weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" }));
 
 /**
  * An entity's state as a person would read it: units, rounding, and times as "ago".

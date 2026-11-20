@@ -159,6 +159,7 @@ svg.map.panning { cursor: grabbing; }
 .drawer li .when { min-width: 48px; white-space: nowrap; flex: none; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .drawer li .big { min-width: 52px; white-space: nowrap; flex: none; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .drawer .glyph { flex: none; }
+.drawer .muted { color: var(--muted); }
 .drawer .ok { color: var(--pass); } .drawer .no, .drawer li .sub.no { color: var(--block); } .drawer .warn { color: var(--in); }
 .drawer .note { font-size: 12.5px; color: var(--muted); margin: 14px 0 0; }
 .drawer details summary { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; margin: 24px 0 8px; cursor: pointer; list-style: none; }

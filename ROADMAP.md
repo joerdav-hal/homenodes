@@ -21,20 +21,21 @@ Debt carried forward:
 
 ## 2. Remove one homelab's assumptions
 
-- [ ] **Blueprints.** `automation/config` returns `use_blueprint` and its inputs, so blueprint
-  automations currently draw no wires. Expand them first (Home Assistant has a
-  `blueprint/substitute` command; confirm the minimum version).
-- [ ] **Grouping.** Today automations are grouped by a `[Tag]` at the start of their name.
-  Use the automation's area, then labels, then categories, then the tag, then the area most
-  of its targets are in. Make it a setting.
-- [ ] **Time zone and locale.** Conditions and schedules use the browser's time zone and
-  locale. Use Home Assistant's time zone, the user's "server time" profile setting, and their
-  language and 12/24-hour preference.
-- [ ] **"Defined in".** Replace the Nix-specific detection (`nix_` ids and "Managed in Nix"
-  descriptions) with YAML or UI.
+- [x] **Blueprints.** Blueprint automations and scripts are expanded with
+  `blueprint/substitute` (Home Assistant 2024.7, core #119890) before drawing; older versions,
+  and blueprints that can't be loaded, are reported on the node and in Health.
+- [x] **Grouping.** A View menu choice: area (the default: the automation's area, then a `[Tag]`
+  naming an area, then where its targets are), label, category, or name tag. Each grouping
+  keeps its own saved layout; layouts from before this keep the name-tag grouping.
+- [x] **Time zone and locale.** Conditions and schedules run on Home Assistant's time zone.
+  Times are shown in the user's language, 12 or 24 hours, and server or browser time, as their
+  profile asks.
+- [x] **"Defined in".** YAML or UI, from whether Home Assistant's editor API knows the
+  automation, replacing the Nix-specific guess.
 - [ ] **Strings** into a translation table, English first.
-- [ ] Fake-house cases for every awkward config: packages, `!input`, script fields, and
-  automations an integration created.
+- [x] Fake-house cases: blueprint automations and scripts, a missing blueprint, YAML packages,
+  script fields, labels and categories.
+- [ ] Automations an integration created, if any exist in the wild.
 
 ## 3. The integration
 

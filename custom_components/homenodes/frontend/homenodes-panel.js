@@ -7,7 +7,9 @@ import { buildGraph, resolvePath, isOwner, isLeaf } from "./graph.js";
 import { evalConditions, branchConditions } from "./conditions.js";
 import { nextAt } from "./schedule.js";
 import { layout, wirePath } from "./layout.js";
-import { ago, inFmt, clock, hhmm, fmtState, yaml } from "./format.js";
+import { ago, inFmt, clock, hhmm, dayTime, fmtState, yaml, setTimeFormat } from "./format.js";
+import { expandBlueprints, blueprintName } from "./blueprints.js";
+import { instantIn, partsIn } from "./time.js";
 import { h, s, ICONS, DOMAIN_NAME, nodeIcon, icon, glyph } from "./dom.js";
 import { CSS } from "./styles.js";
 
@@ -28,7 +30,15 @@ class HomeNodesPanel extends HTMLElement {
     this._sparks = [];
     this._painted = new Map();
     this._collapsed = new Set();
-    this._opts = { conditions: true, heat: false, focus: false };
+    /** @type {{ conditions: boolean, heat: boolean, grouping: import("./graph.js").Grouping }} */
+    this._opts = { conditions: true, heat: false, grouping: "area" };
+    /** Blueprint expansions, kept between reloads. @type {Map<string, Promise<any>>} */
+    this._blueprintCache = new Map();
+    /** Where each automation is defined, asked once. @type {Map<string, Promise<string>>} */
+    this._defined = new Map();
+    // Saved positions and collapsed areas, one set per grouping.
+    this._posBy = {};
+    this._collapsedBy = {};
     this._tpl = new Map();
     this._tplSubs = new Map();
     this._mode = "live";
@@ -38,6 +48,7 @@ class HomeNodesPanel extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     this.toggleAttribute("dark", !!hass?.themes?.darkMode);
+    this._applyLocale(hass);
     if (!this._started && this.isConnected) this._start();
     else if (this._ready && this._mode === "live") { this._syncStates(); this._evalSoon(); }
   }
@@ -85,31 +96,48 @@ class HomeNodesPanel extends HTMLElement {
     const states = Object.values(this._hass.states);
     const ids = (d) => states.filter((st) => st.entity_id.startsWith(`${d}.`)).map((st) => st.entity_id);
     const grab = (type, eid) => this._ws({ type, entity_id: eid }).then((r) => r.config, (e) => ({ error: e.message || e.code || "error" }));
-    const [entities, devices, areas, autoCfgs, scriptCfgs] = await Promise.all([
+    // Labels and categories are newer registries; without them, those groupings just come up empty.
+    const optional = (msg) => this._ws(msg).catch(() => []);
+    const [entities, devices, areas, labels, autoCats, scriptCats, autoCfgs, scriptCfgs] = await Promise.all([
       this._ws({ type: "config/entity_registry/list" }),
       this._ws({ type: "config/device_registry/list" }),
       this._ws({ type: "config/area_registry/list" }),
+      optional({ type: "config/label_registry/list" }),
+      optional({ type: "config/category_registry/list", scope: "automation" }),
+      optional({ type: "config/category_registry/list", scope: "script" }),
       Promise.all(ids("automation").map((eid) => grab("automation/config", eid).then((c) => [eid, c]))),
       Promise.all(ids("script").map((eid) => grab("script/config", eid).then((c) => [eid, c]))),
     ]);
-    this._areaNames = new Set(areas.map((a) => a.name));
-    return buildGraph({ states, entities, devices, areas, configs: Object.fromEntries(autoCfgs), scriptConfigs: Object.fromEntries(scriptCfgs) });
-  }
-
-  async _load(keepView = false) {
-    const [graph, saved] = await Promise.all([
-      this._fetchGraph(),
-      keepView ? null : this._loadSaved(),
+    const send = (msg) => this._ws(msg);
+    const [autos, scripts] = await Promise.all([
+      expandBlueprints(Object.fromEntries(autoCfgs), "automation", send, this._blueprintCache),
+      expandBlueprints(Object.fromEntries(scriptCfgs), "script", send, this._blueprintCache),
     ]);
+    this._areaNames = new Set(areas.map((a) => a.name));
+    // What the user wrote, as opposed to what a blueprint expands to, for the inspector.
+    this._written = Object.fromEntries([...autoCfgs, ...scriptCfgs]);
+    return buildGraph({
+      states, entities, devices, areas, labels, categories: { automation: autoCats, script: scriptCats },
+      configs: autos.configs, scriptConfigs: scripts.configs, blueprints: { ...autos.blueprints, ...scripts.blueprints },
+      grouping: this._opts.grouping,
+    });
+  }
+  // keepView keeps the current pan and zoom; refit fits the map afresh.
+  async _load({ keepView = false, refit = false } = {}) {
+    const saved = keepView ? null : await this._loadSaved();
     if (saved) {
-      Object.assign(this._opts, saved.opts || {});
-      this._collapsed = new Set(saved.collapsed || []);
+      Object.assign(this._opts, saved.opts);
+      this._posBy = saved.posBy;
+      this._collapsedBy = saved.collapsedBy;
     }
+    this._collapsed = new Set(this._collapsedBy[this._opts.grouping] || []);
+    const graph = await this._fetchGraph();
+    const savedPos = this._posBy[this._opts.grouping] || {};
     const fixed = new Map();
     for (const n of graph.nodes) {
       const old = this._nodes.get(n.id);
       if (old) fixed.set(n.id, [old.hx ?? old.x, old.hy ?? old.y]);
-      else if (saved?.pos?.[n.id]) fixed.set(n.id, saved.pos[n.id]);
+      else if (Array.isArray(savedPos[n.id])) fixed.set(n.id, savedPos[n.id]);
     }
     layout(graph.nodes, graph.edges, fixed);
     this._graph = graph;
@@ -125,23 +153,37 @@ class HomeNodesPanel extends HTMLElement {
     const c = { automation: 0, script: 0, other: 0 };
     for (const n of graph.nodes) c[n.kind in c ? n.kind : "other"]++;
     this._count.textContent = `${c.automation} automations, ${c.script} scripts`;
-    if (keepView) this._applyView();
+    if (refit) this._fit();
+    else if (keepView) this._applyView();
     // A view saved at the minimum zoom came from a panel with no size; fit afresh instead.
     else if (saved?.view && saved.view.k > 0.05) { this._view = saved.view; this._applyView(); }
     else this._fit();
-    if (!saved?.pos || graph.nodes.some((n) => !saved.pos[n.id])) this._save();
+    if (graph.nodes.some((n) => !savedPos[n.id])) this._save();
     this._evalAll();
     this._refreshHealth();
     this._syncOptButtons();
     if (this._opts.heat) this._loadHeat();
   }
-
   // A saved layout, or the one saved under the name this project had before, so it carries over.
+  // A saved layout, or the one saved under the name this project had before, so it carries over.
+  // Layouts from before grouping was a choice were grouped by [Tag], so they keep that.
   async _loadSaved() {
     const get = (key) => this._ws({ type: "frontend/get_user_data", key }).then((r) => r?.value ?? null, () => null);
-    return (await get(STORE_KEY)) ?? (await get(LEGACY_STORE_KEY));
+    let v = await get(STORE_KEY), legacy = false;
+    if (!v) { v = await get(LEGACY_STORE_KEY); legacy = !!v; }
+    if (!v || typeof v !== "object") return null;
+    const old = legacy || v.v === 2 || (!v.posBy && v.pos);
+    const opts = { ...(v.opts && typeof v.opts === "object" ? v.opts : {}) };
+    delete opts.focus;
+    if (!opts.grouping) opts.grouping = old ? "tag" : "area";
+    const object = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
+    return {
+      opts,
+      view: v.view && Number.isFinite(v.view.k) ? v.view : null,
+      posBy: object(v.posBy ?? (v.pos ? { tag: v.pos } : {})),
+      collapsedBy: object(v.collapsedBy ?? (Array.isArray(v.collapsed) ? { tag: v.collapsed } : {})),
+    };
   }
-
   // ------------------------------------------------------------ shell
 
   _renderShell() {
@@ -214,6 +256,14 @@ class HomeNodesPanel extends HTMLElement {
       this._popItem("Condition status", "Colour each condition by whether it would pass right now", this._opts.conditions, () => this._setOpt("conditions", !this._opts.conditions)),
       this._popItem("Activity heat", "Mark how often each automation ran over the last week", this._opts.heat, () => this._setOpt("heat", !this._opts.heat)),
       h("hr"),
+      h("div", { class: "key" }, h("b", {}, "Group by")),
+      ...[
+        ["area", "Area", "The automation's area, or where the things it controls are"],
+        ["label", "Label", "Its first label"],
+        ["category", "Category", "Its category"],
+        ["tag", "Name tag", "A [Tag] at the start of its name"],
+      ].map(([g, label, note]) => this._popItem(label, note, this._opts.grouping === g, () => this._setGrouping(g))),
+      h("hr"),
       h("div", { class: "key" }, h("b", {}, "Key"),
         key("trigger", null, "Trigger, what starts it"),
         key("condition", null, "Condition, what it checks"),
@@ -245,6 +295,21 @@ class HomeNodesPanel extends HTMLElement {
     if (k === "conditions") { this._applyCondClasses(); this._repaintOwners(); }
     if (k === "heat") { if (v) this._loadHeat(); else this._repaintOwners(); }
     this._save();
+  }
+  // Conditions and schedules run on Home Assistant's clock; times are shown the way the user's
+  // profile asks: their language, 12 or 24 hours, and server or browser time.
+  _applyLocale(hass) {
+    const loc = hass?.locale || {};
+    const key = JSON.stringify([loc, hass?.config?.time_zone, hass?.language]);
+    if (key === this._localeKey) return;
+    this._localeKey = key;
+    this._tz = hass?.config?.time_zone || undefined;
+    setTimeFormat({
+      language: loc.time_format === "system" ? undefined : loc.language || hass?.language,
+      hour12: loc.time_format === "am_pm" ? true : loc.time_format === "24" ? false : undefined,
+      timeZone: loc.time_zone === "server" ? this._tz : undefined,
+    });
+    if (this._ready) { this._syncStates(true); this._evalAll(); }
   }
   _syncOptButtons() { this._viewBtn.setAttribute("aria-pressed", String(this._opts.heat)); }
 
@@ -432,6 +497,7 @@ class HomeNodesPanel extends HTMLElement {
       const blocked = n.kind === "automation" && this._opts.conditions && n.blocked?.length && !off;
       g.classList.toggle("blocked", !!blocked);
       this._setText(n.sumEl, n.broken ? "Can't read its config"
+        : n.blueprint?.error ? "Can't read its blueprint"
         : blocked ? `Blocked: ${n.blocked[0]}${n.blocked.length > 1 ? `, +${n.blocked.length - 1}` : ""}`
         : n.kind === "script" ? (st?.state === "on" ? "Running" : "Idle")
         : capital(n.summary || n.config?.mode || ""));
@@ -442,7 +508,7 @@ class HomeNodesPanel extends HTMLElement {
       this._setText(n.stateEl, n.missing ? "Doesn't exist" : !st && n.snapshot ? "Made when it runs" : capital(fmtState(st, ref)));
       for (const e of n.wires) if (e.a === n) e.el?.classList.toggle("live", active && this._states()[e.dst]?.state !== "off");
     } else if (n.kind === "time" && n.schedule) {
-      const next = this._mode === "live" ? nextAt(n.schedule, new Date(), this._hass.states) : null;
+      const next = this._mode === "live" ? nextAt(n.schedule, new Date(), this._hass.states, this._tz) : null;
       this._setText(n.subEl, !next ? "" : n.schedule.type === "time" ? capital(inFmt(next.getTime() - Date.now())) : `${hhmm(next)}, ${inFmt(next.getTime() - Date.now())}`);
     }
   }
@@ -506,7 +572,7 @@ class HomeNodesPanel extends HTMLElement {
       };
       const fails = new Map();
       const top = cfg.conditions ?? cfg.condition;
-      const ctx = { states, now, tpl: this._tpl, resolve, skipTpl };
+      const ctx = { states, now, tpl: this._tpl, resolve, skipTpl, timeZone: this._tz };
       const verdict = evalConditions(top, { ...ctx, report: (id, ok, why) => { rep(id, ok); if (ok === false && !fails.has(id)) fails.set(id, why); } });
       for (const c of branchConditions(cfg.actions ?? cfg.action)) evalConditions(c, { ...ctx, report: rep });
       if (live) this._watchTemplates([top, ...branchConditions(cfg.actions ?? cfg.action)], skipTpl);
@@ -846,13 +912,31 @@ class HomeNodesPanel extends HTMLElement {
   _save() {
     clearTimeout(this._saveT);
     this._saveT = setTimeout(() => {
-      const pos = {};
-      for (const n of this._nodes.values()) pos[n.id] = [n.hx ?? n.x, n.hy ?? n.y];
-      const value = { v: 2, pos, view: this._focusing ? this._homeView : this._view, collapsed: [...this._collapsed], opts: this._opts };
-      this._ws({ type: "frontend/set_user_data", key: STORE_KEY, value }).catch((e) => console.warn("automap: could not save layout", e));
+      this._remember();
+      const value = { v: 3, posBy: this._posBy, collapsedBy: this._collapsedBy, view: this._focusing ? this._homeView : this._view, opts: this._opts };
+      this._ws({ type: "frontend/set_user_data", key: STORE_KEY, value }).catch((e) => console.warn("homenodes: could not save layout", e));
     }, 800);
   }
 
+  // Note the current grouping's positions and collapsed areas, before anything changes them.
+  _remember() {
+    const pos = {};
+    for (const n of this._nodes.values()) pos[n.id] = [n.hx ?? n.x, n.hy ?? n.y];
+    const g = this._opts.grouping;
+    this._posBy = { ...this._posBy, [g]: pos };
+    this._collapsedBy = { ...this._collapsedBy, [g]: [...this._collapsed] };
+  }
+
+  // Each grouping keeps its own layout, so switching back finds the map as you left it.
+  async _setGrouping(grouping) {
+    if (this._opts.grouping === grouping || !this._ready) return;
+    this._select(null, false, null, true);
+    this._remember();
+    this._opts.grouping = grouping;
+    this._nodes = new Map();
+    await this._load({ keepView: true, refit: true });
+    this._save();
+  }
   async _tidy() {
     if (!confirm("Lay out the whole map again? Positions you dragged will be lost.")) return;
     this._select(null, false, null, true);
@@ -867,7 +951,7 @@ class HomeNodesPanel extends HTMLElement {
     if (!this._ready) return;
     const sel = this._selected;
     this._select(null, false, null, true);
-    await this._load(true);
+    await this._load({ keepView: true });
     if (sel && this._byId(sel)) this._select(sel); else this._select(null);
   }
 
@@ -1145,8 +1229,7 @@ class HomeNodesPanel extends HTMLElement {
     if (!/^(svc|all|area|time|sun|pattern|ha):/.test(n.id)) d.append(h("div", { class: "id" }, n.id.replace(/^device:/, "")));
     if (isOwner(n)) {
       const cfg = n.config || {};
-      const desc = (cfg.description || "").replace(/\s*Managed in Nix\.?\s*$/, "");
-      if (desc) d.append(h("p", { class: "desc" }, desc));
+      if (cfg.description) d.append(h("p", { class: "desc" }, cfg.description));
       const off = st?.state === "off", cid = n.cfgId || cfg.id;
       const acts = h("div", { class: "acts" });
       if (n.kind === "automation") {
@@ -1159,13 +1242,16 @@ class HomeNodesPanel extends HTMLElement {
           btn("Open editor", "outline", () => this._navigate(`/config/script/edit/${n.id.slice(7)}`)));
       }
       const last = st?.attributes?.last_triggered;
-      const nix = /^nix_/.test(cid || "") || /Managed in Nix/.test(cfg.description || "");
+      const definedIn = h("span", { class: "muted" }, "…");
+      this._definedIn(n).then((where) => { definedIn.textContent = where; definedIn.className = ""; });
       d.append(acts, facts([
         ["Status", n.kind === "script" ? (st?.state === "on" ? "Running" : "Idle") : st?.state === "unavailable" ? "Unavailable" : off ? "Disabled" : "Enabled"],
         ["Last ran", last ? `${capital(ago(last, this._ref()))}, at ${hhmm(last)}` : "Never"],
         n.summary ? ["Starts on", capital(n.summary)] : null,
         ["Mode", capital(cfg.mode || "single")],
-        ["Defined in", nix ? "Nix" : "The UI"],
+        ["Defined in", definedIn],
+        n.blueprint ? ["Blueprint", capital(blueprintName(n.blueprint.path)), n.blueprint.error ? "no" : null] : null,
+        n.blueprint?.error ? ["Problem", n.blueprint.error, "no"] : null,
         n.blocked?.length && this._opts.conditions && !off ? ["Blocked now", n.blocked.join("; "), "no"] : null,
         n.broken ? ["Problem", `Can't read its config: ${n.broken}`, "no"] : null,
       ]));
@@ -1177,7 +1263,9 @@ class HomeNodesPanel extends HTMLElement {
         return this._row(e.a, e.role, h("span", {}, this._stateText(e.a), r != null ? h("span", { class: r ? "ok" : "no" }, r ? ", passes" : ", blocks") : null), r);
       })));
       if (outs.length) d.append(...this._section("Acts on", order(outs).map((e) => this._row(e.b, e.role, this._stateText(e.b)))));
-      if (n.config) d.append(h("details", {}, h("summary", {}, icon("chevron", 14), "Configuration"), h("pre", {}, yaml(n.config))));
+      const written = this._written?.[n.id] || n.config;
+      if (written) d.append(h("details", {}, h("summary", {}, icon("chevron", 14), "Configuration"), h("pre", {}, yaml(written))));
+      if (n.blueprint && !n.blueprint.error && n.config) d.append(h("details", {}, h("summary", {}, icon("chevron", 14), "Expanded from the blueprint"), h("pre", {}, yaml(n.config))));
       return;
     }
     if (n.kind === "entity") {
@@ -1329,7 +1417,7 @@ class HomeNodesPanel extends HTMLElement {
     for (const n of this._nodes.values()) {
       if (n.kind !== "time" || !n.schedule) continue;
       const owners = n.wires.filter((e) => e.a === n).map((e) => e.b);
-      const next = nextAt(n.schedule, now, states);
+      const next = nextAt(n.schedule, now, states, this._tz);
       if (n.schedule.type === "pattern") { repeating.push({ n, owners, next }); continue; }
       if (next && next.getTime() <= horizon) for (const o of owners) items.push({ at: next, o, why: n.schedule.type === "time" ? null : capital(n.label) });
     }
@@ -1337,8 +1425,10 @@ class HomeNodesPanel extends HTMLElement {
       for (const dt of o.dtTriggers || []) {
         const m = (states[dt]?.state || "").match(/(\d\d):(\d\d)(?::(\d\d))?$/);
         if (!m) continue;
-        const at = new Date(now); at.setHours(+m[1], +m[2], +(m[3] || 0), 0);
-        if (at <= now) at.setDate(at.getDate() + 1);
+        const z = partsIn(now, this._tz), wall = { hour: +m[1], minute: +m[2], second: +(m[3] || 0) };
+        let t = instantIn({ ...z, ...wall }, this._tz);
+        if (t <= now.getTime()) t = instantIn({ ...z, ...wall, day: z.day + 1 }, this._tz);
+        const at = new Date(t);
         if (at.getTime() <= horizon) items.push({ at, o, why: `Set by ${this._nodes.get(dt)?.label || dt}` });
       }
     }
@@ -1380,6 +1470,25 @@ class HomeNodesPanel extends HTMLElement {
 
   // ------------------------------------------------------------ health
 
+  // Where an automation or script lives: Home Assistant's editor API only knows the ones it can
+  // edit, so a 404 means it is defined in YAML (a package, an include, or configuration.yaml).
+  async _definedIn(n) {
+    if (!this._defined.has(n.id)) {
+      const id = n.kind === "automation" ? n.cfgId : n.id.slice(7);
+      const ask = async () => {
+        if (!id) return "YAML";
+        if (!this._hass.callApi) return "Unknown";
+        try { await this._hass.callApi("GET", `config/${n.kind}/config/${encodeURIComponent(id)}`); return "The UI"; }
+        catch (e) {
+          const status = e?.status_code ?? e?.status;
+          return status === 404 || /not ?found/i.test(String(e?.body?.message ?? e?.error ?? e?.message ?? "")) ? "YAML" : "Unknown";
+        }
+      };
+      this._defined.set(n.id, ask());
+    }
+    return this._defined.get(n.id);
+  }
+
   _issues() {
     const out = [];
     const states = this._hass.states;
@@ -1388,6 +1497,7 @@ class HomeNodesPanel extends HTMLElement {
     for (const n of this._nodes.values()) {
       if (n.missing) out.push({ sev: "error", kind: "Broken references", id: [...n.wires.map((e) => (e.a === n ? e.b : e.a)).filter(isOwner)][0]?.id || n.id, text: `${n.label} doesn't exist`, note: `used by ${users(n)}` });
       if (isOwner(n) && (n.broken || states[n.id]?.state === "unavailable")) out.push({ sev: "error", kind: "Automations that can't load", id: n.id, text: label(n), note: n.broken || "unavailable" });
+      if (isOwner(n) && n.blueprint?.error) out.push({ sev: "warn", kind: "Blueprints that can't be read", id: n.id, text: label(n), note: `${n.blueprint.path}: ${n.blueprint.error}` });
     }
     // Listed once per entity, with everything that waits on it.
     for (const n of this._nodes.values()) {
@@ -1583,7 +1693,7 @@ class HomeNodesPanel extends HTMLElement {
       if (e.kind === "run") this._runVisual(n, e.source, e.t, animate);
       else if (animate) this._changeVisual(n, e.changed, e.owner);
     }
-    this._histTime.textContent = new Date(H.T).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    this._histTime.textContent = dayTime(H.T);
     this._histSlider.value = String(Math.round((H.T - H.start) / 1000));
     if (performance.now() - (this._histEvalAt || 0) > 1000) { this._histEvalAt = performance.now(); this._evalAll(); }
   }

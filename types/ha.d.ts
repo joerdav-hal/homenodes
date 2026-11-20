@@ -121,9 +121,25 @@ export interface HomeAssistant {
   states: HassEntities;
   connection: Connection;
   callService(domain: string, service: string, data?: Record<string, any>): Promise<unknown>;
+  /** A REST call to Home Assistant's own API, authenticated as the user. */
+  callApi<T = unknown>(method: "GET" | "POST" | "DELETE", path: string, body?: Record<string, any>): Promise<T>;
   themes?: { darkMode?: boolean };
   language?: string;
+  /** time_format: "language" | "system" | "am_pm" | "24"; time_zone: "local" | "server". */
   locale?: { language: string; time_format?: string; time_zone?: string };
-  config?: { time_zone?: string };
+  config?: { time_zone?: string; version?: string };
   user?: { is_admin: boolean };
+}
+
+export interface LabelRegistryEntry {
+  label_id: string;
+  name: string;
+  color?: string | null;
+  icon?: string | null;
+}
+
+export interface CategoryRegistryEntry {
+  category_id: string;
+  name: string;
+  icon?: string | null;
 }

@@ -1,6 +1,7 @@
 // Conditions evaluated in the browser from live states, so the map can say what blocks what.
 
 import { ago } from "./format.js";
+import { partsIn } from "./time.js";
 import { asList, isTemplate } from "./util.js";
 
 /** @typedef {import("../../../types/ha").HassEntities} HassEntities */
@@ -19,6 +20,7 @@ import { asList, isTemplate } from "./util.js";
  * @property {(v: any) => string[]} resolve Turns entity_id-like values into entity ids.
  * @property {Report} [report] Called for every entity (or "time:…") an atomic condition looked at.
  * @property {(template: string) => boolean} [skipTpl] Templates that cannot be known ahead.
+ * @property {string} [timeZone] Home Assistant's time zone, for time and sun conditions; the browser's if omitted.
  */
 
 /** @param {Tri[]} rs @returns {Tri} */
@@ -61,7 +63,7 @@ const timeOfDay = (s, states) => {
  * @param {EvalOptions} options
  * @returns {Tri}
  */
-export function evalConditions(conds, { states, now = new Date(), tpl = new Map(), resolve, report = () => {}, skipTpl = () => false }) {
+export function evalConditions(conds, { states, now = new Date(), tpl = new Map(), resolve, report = () => {}, skipTpl = () => false, timeZone }) {
   let rep = report;
   /** @param {string} str @returns {Tri} */
   const tplResult = (str) => {
@@ -126,12 +128,13 @@ export function evalConditions(conds, { states, now = new Date(), tpl = new Map(
         return and3(rs);
       }
       case "time": {
-        const t = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+        const z = partsIn(now, timeZone);
+        const t = z.hour * 3600 + z.minute * 60 + z.second;
         const a = c.after != null ? timeOfDay(c.after, states) : null;
         const b = c.before != null ? timeOfDay(c.before, states) : null;
         if ((c.after != null && a == null) || (c.before != null && b == null)) return null;
         let ok = a != null && b != null ? (a <= b ? t >= a && t < b : t >= a || t < b) : a != null ? t >= a : b != null ? t < b : true;
-        if (c.weekday) ok = ok && asList(c.weekday).includes(["sun", "mon", "tue", "wed", "thu", "fri", "sat"][now.getDay()]);
+        if (c.weekday) ok = ok && asList(c.weekday).includes(["sun", "mon", "tue", "wed", "thu", "fri", "sat"][z.weekday]);
         /** @param {any} x */
         const hm = (x) => (typeof x === "string" && !x.includes(".") ? x.replace(/^(\d\d?:\d\d):00$/, "$1") : x);
         const span = c.after != null && c.before != null ? `${hm(c.after)}–${hm(c.before)}` : c.after != null ? `after ${hm(c.after)}` : c.before != null ? `before ${hm(c.before)}` : "";
@@ -156,7 +159,7 @@ export function evalConditions(conds, { states, now = new Date(), tpl = new Map(
       case "sun": {
         const sun = states["sun.sun"];
         if (!sun || c.after_offset || c.before_offset) return null;
-        const up = sun.state === "above_horizon", pm = now.getHours() >= 12;
+        const up = sun.state === "above_horizon", pm = partsIn(now, timeZone).hour >= 12;
         const k = `${c.after || ""}|${c.before || ""}`;
         /** @type {Record<string, boolean>} */
         const table = { "sunset|": !up && pm, "|sunrise": !up && !pm, "sunrise|sunset": up, "sunset|sunrise": !up, "sunrise|": up || pm, "|sunset": up || !pm };

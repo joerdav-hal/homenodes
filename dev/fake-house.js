@@ -12,6 +12,8 @@
 /** @typedef {import("../types/ha").HassEvent} HassEvent */
 /** @typedef {import("../types/ha").Config} Config */
 /** @typedef {import("../types/ha").RenderTemplateResult} RenderTemplateResult */
+/** @typedef {import("../types/ha").LabelRegistryEntry} LabelRegistryEntry */
+/** @typedef {import("../types/ha").CategoryRegistryEntry} CategoryRegistryEntry */
 
 /**
  * @typedef {object} House
@@ -21,6 +23,10 @@
  * @property {EntityRegistryEntry[]} entities
  * @property {DeviceRegistryEntry[]} devices
  * @property {AreaRegistryEntry[]} areas
+ * @property {LabelRegistryEntry[]} labels
+ * @property {Record<"automation" | "script", CategoryRegistryEntry[]>} categories By scope.
+ * @property {Record<string, Config>} blueprintSubstitutions What blueprint/substitute returns, by JSON [domain, path, input].
+ * @property {string[]} yamlDefined Automation ids defined in YAML packages, so the UI's config API can't load them.
  * @property {Record<string, { list: TraceSummary[], runs: Record<string, TraceDetail> }>} traces By "domain:item_id".
  * @property {Record<string, HistoryRow[]>} history The last 24 hours.
  * @property {LogbookEntry[]} logbook
@@ -42,7 +48,10 @@ const rng = (seed) => () => {
  */
 export function makeHouse({ now = Date.now(), copies = 1 } = {}) {
   /** @type {House} */
-  const house = { states: [], configs: {}, scriptConfigs: {}, entities: [], devices: [], areas: [], traces: {}, history: {}, logbook: [], templates: {}, events: [] };
+  const house = { states: [], configs: {}, scriptConfigs: {}, entities: [], devices: [], areas: [], traces: {}, history: {}, logbook: [], templates: {}, events: [],
+    labels: [{ label_id: "lighting", name: "Lighting" }, { label_id: "security", name: "Security" }],
+    categories: { automation: [{ category_id: "cat_comfort", name: "Comfort" }], script: [] },
+    blueprintSubstitutions: {}, yamlDefined: [] };
   const iso = (/** @type {number} */ t) => new Date(t).toISOString();
   const min = 60e3, hour = 3600e3;
   let ctxN = 0;
@@ -58,6 +67,7 @@ export function makeHouse({ now = Date.now(), copies = 1 } = {}) {
     const kitchenSensor = device("dev_kitchen_motion", "Kitchen motion sensor", kitchen);
     const remote = device("dev_bedroom_remote", "Bedroom remote", bedroom);
     const bedroomBulb = device("dev_bedroom_bulb", "Bedroom bulb", bedroom);
+    const phone = device("dev_phone", "Alex's phone", "");
 
     /**
      * @param {string} eid @param {string} label @param {string} state
@@ -84,6 +94,7 @@ export function makeHouse({ now = Date.now(), copies = 1 } = {}) {
     const movie = entity("scene.movie", "Movie scene", iso(now - 2 * 86400e3), { area: living });
     const bedLight = entity("light.bedroom", "Bedroom light", "off", { device: bedroomBulb });
     const gardenLight = entity("light.garden", "Garden lights", "off", { area: garden });
+    const gardenMotion = entity("binary_sensor.garden_motion", "Garden motion", "off", { area: garden, attrs: { device_class: "motion" } });
     const officeLight = entity("light.office", "Office light", "off", { area: office });
     entity("sensor.outdoor_temperature", "Outdoor temperature", "6.5", { area: garden, attrs: { unit_of_measurement: "°C", device_class: "temperature" } });
     const thermostat = entity("climate.thermostat", "Thermostat", "heat", { area: living, attrs: { temperature: 20, current_temperature: 19.5 } });
@@ -102,13 +113,14 @@ export function makeHouse({ now = Date.now(), copies = 1 } = {}) {
 
     /**
      * @param {string} id @param {string} alias @param {Config} config
-     * @param {{ state?: string, last?: number | null, area?: string, error?: string }} [o]
+     * @param {{ state?: string, last?: number | null, area?: string, error?: string, labels?: string[], category?: string, yaml?: boolean }} [o]
      */
     const automation = (id, alias, config, o = {}) => {
+      if (o.yaml) house.yamlDefined.push(id + sfx);
       const eid = `automation.${id}${sfx}`;
       const last = o.last === undefined ? 3 * hour : o.last;
       house.states.push({ entity_id: eid, state: o.state ?? "on", attributes: { friendly_name: alias + name, id: id + sfx, last_triggered: last == null ? null : iso(now - last), mode: config.mode || "single", current: 0 }, last_changed: iso(now - 86400e3), last_updated: iso(now - (last ?? 86400e3)) });
-      house.entities.push({ id: regId(eid), entity_id: eid, device_id: null, area_id: o.area ?? null, disabled_by: null });
+      house.entities.push({ id: regId(eid), entity_id: eid, device_id: null, area_id: o.area ?? null, disabled_by: null, labels: o.labels ?? [], categories: o.category ? { automation: o.category } : {} });
       house.configs[eid] = o.error ? { error: o.error } : { id: id + sfx, alias: alias + name, description: "", ...config };
       return eid;
     };
@@ -125,10 +137,18 @@ export function makeHouse({ now = Date.now(), copies = 1 } = {}) {
       { action: "light.turn_off", target: { entity_id: lCeiling } },
       { action: "light.turn_on", target: { entity_id: lamp }, data: { brightness_pct: 30 } },
     ] });
-    script("goodnight", "Goodnight", { sequence: [
+    script("goodnight", "Goodnight", { fields: { temperature: { name: "Temperature", default: 17, selector: { number: { min: 10, max: 25 } } } }, sequence: [
       { action: "light.turn_off", target: { area_id: [bedroom, living] } },
-      { action: "climate.set_temperature", target: { entity_id: thermostat }, data: { temperature: 17 } },
+      { action: "climate.set_temperature", target: { entity_id: thermostat }, data: { temperature: "{{ temperature | default(17) }}" } },
     ] });
+    // A script made from Home Assistant's confirmable notification blueprint.
+    const askInput = { notify_device: phone, message: "Turn the heating up?", confirm_action: [{ action: "climate.set_temperature", target: { entity_id: thermostat }, data: { temperature: 22 } }] };
+    script("ask_heating", "Ask about the heating", { use_blueprint: { path: "homeassistant/confirmable_notification.yaml", input: askInput } });
+    house.blueprintSubstitutions[JSON.stringify(["script", "homeassistant/confirmable_notification.yaml", askInput])] = { mode: "restart", sequence: [
+      { alias: "Send notification", domain: "mobile_app", type: "notify", device_id: phone, message: "Turn the heating up?" },
+      { alias: "Awaiting response", wait_for_trigger: [{ platform: "event", event_type: "mobile_app_notification_action" }] },
+      { choose: [{ conditions: "{{ wait.trigger.event.data.action == 'CONFIRM' }}", sequence: askInput.confirm_action }] },
+    ] };
 
     const motionLights = automation("kitchen_motion_lights", "[Kitchen] Lights on with motion", {
       description: "Main light after dark, the counter light by day.",
@@ -136,7 +156,7 @@ export function makeHouse({ now = Date.now(), copies = 1 } = {}) {
       conditions: [{ condition: "state", entity_id: kCeiling, state: "off" }],
       actions: [{ choose: [{ conditions: [{ condition: "sun", after: "sunset" }], sequence: [{ action: "light.turn_on", target: { entity_id: kCeiling } }] }],
         default: [{ action: "light.turn_on", target: { entity_id: kCounter } }] }],
-    }, { last: 12 * min });
+    }, { last: 12 * min, labels: ["lighting"] });
     automation("kitchen_lights_off", "[Kitchen] Lights off when empty", {
       triggers: [{ trigger: "state", entity_id: kMotion, to: "off", for: { minutes: 10 } }],
       actions: [
@@ -166,7 +186,7 @@ export function makeHouse({ now = Date.now(), copies = 1 } = {}) {
       triggers: [{ trigger: "state", entity_id: door, to: "on" }],
       conditions: [{ condition: "numeric_state", entity_id: "zone.home", below: 1 }],
       actions: [{ action: "notify.mobile_app_phone", data: { message: "Front door opened. It's {{ states('sensor.outdoor_temperature" + sfx + "') }}° outside." } }],
-    }, { last: 4 * 86400e3 });
+    }, { last: 4 * 86400e3, labels: ["security", "lighting"] });
     automation("movie_mode", "[Living room] Movie mode", {
       triggers: [{ trigger: "state", entity_id: tv, to: "playing" }],
       conditions: [{ condition: "sun", after: "sunset" }],
@@ -180,12 +200,12 @@ export function makeHouse({ now = Date.now(), copies = 1 } = {}) {
       triggers: [{ trigger: "numeric_state", entity_id: "zone.home", below: 1, for: { minutes: 5 } }],
       conditions: [{ condition: "state", entity_id: guest, state: "off" }],
       actions: [{ action: "light.turn_off", target: { entity_id: "all" } }, { action: "media_player.media_stop", target: { entity_id: tv } }],
-    }, { last: 2 * 86400e3 });
+    }, { last: 2 * 86400e3, yaml: true });
     automation("heating_morning", "[Heating] Morning warm-up", {
       triggers: [{ trigger: "time", at: "06:30:00" }],
       conditions: [{ condition: "or", conditions: [{ condition: "state", entity_id: "person.alex", state: "home" }, { condition: "state", entity_id: "person.sam", state: "home" }] }],
       actions: [{ action: "climate.set_temperature", target: { entity_id: thermostat }, data: { temperature: 21 } }],
-    }, { last: 10 * hour });
+    }, { last: 10 * hour, category: "cat_comfort", yaml: true });
     automation("bedroom_remote", "[Bedroom] Remote button", {
       triggers: [{ trigger: "device", device_id: remote, domain: "zha", type: "remote_button_short_press", subtype: "turn_on" }],
       actions: [{ type: "toggle", device_id: bedroomBulb, entity_id: regId(bedLight), domain: "light" }],
@@ -212,6 +232,20 @@ export function makeHouse({ now = Date.now(), copies = 1 } = {}) {
       triggers: [{ trigger: "time", at: "08:00:00" }],
       actions: [{ action: "light.turn_on", target: { entity_id: officeLight } }],
     }, { state: "off", last: 40 * 86400e3 });
+    // Two blueprint automations: Home Assistant's own motion light, and one whose blueprint is gone.
+    const motionInput = { motion_entity: gardenMotion, light_target: { entity_id: gardenLight }, no_motion_wait: 120 };
+    automation("garden_motion", "[Garden] Motion light", { use_blueprint: { path: "homeassistant/motion_light.yaml", input: motionInput } }, { area: garden, last: 3 * hour });
+    house.blueprintSubstitutions[JSON.stringify(["automation", "homeassistant/motion_light.yaml", motionInput])] = {
+      mode: "restart", max_exceeded: "silent",
+      triggers: [{ platform: "state", entity_id: gardenMotion, from: "off", to: "on" }],
+      actions: [
+        { alias: "Turn on the light", action: "light.turn_on", target: { entity_id: gardenLight } },
+        { alias: "Wait until there is no motion", wait_for_trigger: { platform: "state", entity_id: gardenMotion, from: "on", to: "off" } },
+        { alias: "Wait the number of seconds", delay: 120 },
+        { alias: "Turn off the light", action: "light.turn_off", target: { entity_id: gardenLight } },
+      ],
+    };
+    automation("office_remote", "[Office] Remote (old blueprint)", { use_blueprint: { path: "someone/removed_remote.yaml", input: { remote: "dev_missing" } } }, { last: 90 * 86400e3 });
 
     // Live template results, as render_template would report them.
     house.templates[`{{ states('${washer}') | float(0) < 5 }}`] = { result: true, listeners: { all: false, entities: [washer], domains: [], time: false } };

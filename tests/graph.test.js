@@ -73,12 +73,39 @@ test("broken references, snapshots and unreadable configs are marked", () => {
   assert.equal(node("automation.desk_fan")?.broken, "Entity not found");
 });
 
-test("a [Tag] prefix is stripped from the label and picks the cluster", () => {
-  const n = node("automation.kitchen_motion_lights");
-  assert.equal(n?.label, "Lights on with motion");
-  assert.equal(n?.cluster, "Kitchen");
-  assert.equal(node("automation.garden_lights")?.cluster, "Other");
+test("a [Tag] prefix is stripped from the label", () => {
+  assert.equal(node("automation.kitchen_motion_lights")?.label, "Lights on with motion");
+  assert.equal(node("automation.kitchen_motion_lights")?.tags?.[0], "Kitchen");
+});
+
+test("area grouping: the automation's area, then a [Tag] naming an area, then its targets' area", () => {
+  assert.equal(node("automation.garden_lights")?.cluster, "Garden", "its registry area");
+  assert.equal(node("automation.kitchen_motion_lights")?.cluster, "Kitchen", "the [Kitchen] tag");
+  assert.equal(node("automation.heating_morning")?.cluster, "Living room", "where the thermostat it sets is");
+  assert.equal(node("automation.half_hourly")?.cluster, "No area", "nothing it touches has an area");
+  assert.equal(node("script.movie_time")?.cluster, "Living room");
   assert.equal(node("binary_sensor.kitchen_motion")?.cluster, "Kitchen");
+});
+
+test("tag grouping keeps the original behaviour", () => {
+  const t = buildGraph({ ...house, grouping: "tag" });
+  const zone = (/** @type {string} */ id) => t.nodes.find((n) => n.id === id)?.cluster;
+  assert.equal(zone("automation.garden_lights"), "Other");
+  assert.equal(zone("automation.heating_morning"), "Heating");
+  assert.equal(zone("automation.kitchen_motion_lights"), "Kitchen");
+  assert.equal(zone("script.movie_time"), "Scripts");
+});
+
+test("label and category grouping use the registries' names", () => {
+  const l = buildGraph({ ...house, grouping: "label" });
+  const lzone = (/** @type {string} */ id) => l.nodes.find((n) => n.id === id)?.cluster;
+  assert.equal(lzone("automation.kitchen_motion_lights"), "Lighting");
+  assert.equal(lzone("automation.front_door"), "Lighting", "the first label by name");
+  assert.equal(lzone("automation.hall_light"), "No label");
+  const c = buildGraph({ ...house, grouping: "category" });
+  const czone = (/** @type {string} */ id) => c.nodes.find((n) => n.id === id)?.cluster;
+  assert.equal(czone("automation.heating_morning"), "Comfort");
+  assert.equal(czone("automation.hall_light"), "No category");
 });
 
 test("refsOf finds what a piece of config refers to", () => {
@@ -113,6 +140,6 @@ test("summarize says a trigger in a few words", () => {
 
 test("repeating the house scales the graph without collisions", () => {
   const big = buildGraph(makeHouse({ copies: 3 }));
-  assert.equal(big.nodes.filter((n) => n.kind === "automation").length, 3 * 17);
+  assert.equal(big.nodes.filter((n) => n.kind === "automation").length, 3 * 19);
   assert.equal(new Set(big.nodes.map((n) => n.id)).size, big.nodes.length);
 });

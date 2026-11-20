@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 (2026-11-20)
+
+The first public release, a beta: installable from HACS as a custom repository.
 
 - Zones are packed with Mapbox's potpack instead of in rows, so a fresh or tidied map is denser
   and closer to a screen's shape (a real install: 36% of the sheet used before, 45% after).

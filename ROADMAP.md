@@ -109,5 +109,11 @@ change 24 → 5.6 ms, the clock tick 34 → 7 ms, focusing an automation 461 →
 
 ## 8. Rollout
 
-- [ ] A beta through HACS as a custom repository.
+- [x] A beta through HACS as a custom repository (0.1.0).
 - [ ] The HACS default list, with an icon in `home-assistant/brands`.
+
+## Later, maybe
+
+- **Wires between zones.** Automations that act across zones make long, crossing wires. Placing
+  connected zones next to each other would shorten them; reroute points, like Blender's, would
+  let people route them by hand. Tidying those automatically is hard, so this waits.

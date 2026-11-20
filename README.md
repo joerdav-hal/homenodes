@@ -5,8 +5,8 @@ conditions run into each automation, its actions run out, and when something hap
 it travel along the wires: a sensor changes, its automation lights up, the lights it turns on
 light up after it.
 
-> **Status: pre-release.** HomeNodes is being turned from a personal panel into an
-> integration anyone can install from HACS. It is not published yet; see
+> **Status: beta.** Install it from HACS as a custom repository. Bugs, rough edges and ideas
+> are welcome in [issues](https://github.com/joerdav/homenodes/issues); see also
 > [ROADMAP.md](ROADMAP.md).
 
 **Documentation:** [joerdav.github.io/homenodes](https://joerdav.github.io/homenodes/), built
@@ -16,8 +16,9 @@ from [`docs/`](docs/) (`npm run docs` serves it locally).
 
 HomeNodes needs Home Assistant 2024.12 or later.
 
-1. Copy `custom_components/homenodes` into your Home Assistant's `custom_components` folder
-   (through HACS as a custom repository, once it is published), then restart.
+1. In HACS, **⋮ → Custom repositories**, add `https://github.com/joerdav/homenodes` as an
+   **Integration**, download **HomeNodes** and restart. (Or copy `custom_components/homenodes`
+   into your `custom_components` folder by hand.)
 2. **Settings → Devices & services → Add integration → HomeNodes.**
 3. Open **HomeNodes** in the sidebar. Only administrators see it.
 

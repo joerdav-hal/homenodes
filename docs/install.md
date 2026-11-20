@@ -6,7 +6,7 @@ HomeNodes needs **Home Assistant 2024.12 or later** and an administrator account
 
 === "HACS"
 
-    Once HomeNodes is published, add it to HACS as a custom repository:
+    Until HomeNodes is in HACS's default list, add it as a custom repository:
 
     1. **HACS → ⋮ → Custom repositories**.
     2. Repository `https://github.com/joerdav/homenodes`, type **Integration**.

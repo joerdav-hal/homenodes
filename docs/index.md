@@ -7,8 +7,9 @@ after it.
 
 ![The map: zones of automations with the entities they listen to and act on](images/map.png)
 
-!!! note "Pre-release"
-    HomeNodes is not published yet. These pages describe the current development version.
+!!! note "Beta"
+    HomeNodes is new. Bugs, rough edges and ideas are welcome in
+    [GitHub issues](https://github.com/joerdav/homenodes/issues).
 
 ## What it shows
 

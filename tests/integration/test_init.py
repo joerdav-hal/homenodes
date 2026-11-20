@@ -8,11 +8,13 @@ from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
-from custom_components.homenodes import panel_config
+from custom_components import homenodes
+from custom_components.homenodes import frontend_digest, panel_config
 from custom_components.homenodes.const import DOMAIN, PANEL_URL
 
 VERSION = "0.1.0"
-MODULE = f"/homenodes_files/{VERSION}/homenodes-panel.js"
+BASE = f"/homenodes_files/{VERSION}-{frontend_digest()}"
+MODULE = f"{BASE}/homenodes-panel.js"
 
 
 def _panel(hass: HomeAssistant) -> frontend.Panel | None:
@@ -57,9 +59,9 @@ async def test_serves_the_frontend_and_its_imports(
     # Long-cached, which the version in the path makes safe.
     assert "max-age" in resp.headers.get("Cache-Control", "")
 
-    resp = await client.get(f"/homenodes_files/{VERSION}/graph.js")
+    resp = await client.get(f"{BASE}/graph.js")
     assert resp.status == 200
-    resp = await client.get(f"/homenodes_files/{VERSION}/translations/en.json")
+    resp = await client.get(f"{BASE}/translations/en.json")
     assert resp.status == 200
 
 
@@ -72,7 +74,7 @@ async def test_static_path_stays_outside_the_package(
     client = await hass_client()
 
     for path in ("../manifest.json", "%2e%2e/manifest.json", "../__init__.py"):
-        resp = await client.get(f"/homenodes_files/{VERSION}/{path}")
+        resp = await client.get(f"{BASE}/{path}")
         assert resp.status in (403, 404), path
 
 
@@ -119,6 +121,16 @@ async def test_panel_url_already_taken(hass: HomeAssistant, entry: MockConfigEnt
     panel = _panel(hass)
     assert panel is not None
     assert panel.sidebar_title == "Someone else's"
+
+
+def test_digest_changes_with_any_frontend_file(tmp_path, monkeypatch) -> None:
+    (tmp_path / "a.js").write_text("one")
+    monkeypatch.setattr(homenodes, "FRONTEND_DIR", tmp_path)
+    first = homenodes.frontend_digest()
+    assert len(first) == 10
+    assert homenodes.frontend_digest() == first
+    (tmp_path / "a.js").write_text("two")
+    assert homenodes.frontend_digest() != first
 
 
 def test_panel_config_replaces_bad_values() -> None:

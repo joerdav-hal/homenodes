@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from homeassistant.components import frontend, panel_custom
@@ -30,6 +31,16 @@ from .const import (
 )
 
 
+def frontend_digest() -> str:
+    """A short hash of the frontend files: a changed file gets a new address, version bump or not."""
+    digest = hashlib.sha256()
+    for path in sorted(FRONTEND_DIR.rglob("*")):
+        if path.is_file() and "__pycache__" not in path.parts:
+            digest.update(str(path.relative_to(FRONTEND_DIR)).encode())
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:10]
+
+
 def panel_config(options: dict[str, Any]) -> dict[str, Any]:
     """The options as the panel reads them, with anything out of range replaced by its default."""
     opts = {**DEFAULTS, **options}
@@ -49,10 +60,11 @@ def panel_config(options: dict[str, Any]) -> dict[str, Any]:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Serve the frontend and add the panel."""
     version = str((await async_get_integration(hass, DOMAIN)).version)
-    base = f"{STATIC_URL}/{version}"
+    digest = await hass.async_add_executor_job(frontend_digest)
+    base = f"{STATIC_URL}/{version}-{digest}"
 
-    # Static routes can't be removed, so register them once per run; the version in the path
-    # means a browser never mixes modules from two releases.
+    # Static routes can't be removed, so register them once per run; the version and digest in the
+    # path mean a browser never mixes modules from two builds.
     served: set[str] = hass.data.setdefault(DOMAIN, set())
     if base not in served:
         await hass.http.async_register_static_paths(

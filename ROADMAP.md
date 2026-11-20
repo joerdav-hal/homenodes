@@ -42,9 +42,10 @@ Debt carried forward:
 
 - [x] `custom_components/homenodes`: config flow, single instance, `hacs.json` requiring Home
   Assistant 2024.12 (options flows get their entry from it).
-- [x] The frontend served from `/homenodes_files/<version>/`, so every module is cache-busted
-  by a release. Not under `/homenodes/`: the frontend answers every path below a panel's URL
-  with its own index page. An admin-only panel, removed on unload.
+- [x] The frontend served from `/homenodes_files/<version>-<hash of its files>/`, so every
+  module is cache-busted by a release, or by any change to a file. Not under `/homenodes/`:
+  the frontend answers every path below a panel's URL with its own index page. An admin-only
+  panel, removed on unload.
 - [x] Options: controls (off by default), default grouping, heat window, labels to hide (never
   read, not just not drawn). The panel checks them again, and with no config behaves as before:
   17 views byte-identical.

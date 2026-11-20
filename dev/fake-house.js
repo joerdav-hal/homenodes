@@ -330,3 +330,43 @@ export function makeHouse({ now = Date.now(), copies = 1 } = {}) {
   }
   return house;
 }
+
+/**
+ * Names that try to be markup, script, templates, prototype keys or layout breakers. Every one must
+ * come out as plain text, in its place, without breaking anything around it.
+ */
+export const HOSTILE = [
+  '<img src=x onerror="window.__pwned=1">',
+  '"><svg onload="window.__pwned=1"></svg><b title="',
+  "‮gnirts desrever‬ then עברית ومرحبا mixed",
+  "W".repeat(600),
+  "{{ states('sensor.secret') }} ${globalThis.__pwned=1} %s {name}",
+  "__proto__",
+  "constructor",
+  "zero​width\u0000null\ttab\nnewline",
+  "javascript:window.__pwned=1",
+  "[<b>Tag</b>] bracketed markup",
+];
+
+/**
+ * The same house with every human-written name replaced by one of HOSTILE, in turn.
+ * @param {House} house
+ * @returns {House}
+ */
+export function makeHostile(house) {
+  let i = 0;
+  const next = () => HOSTILE[i++ % HOSTILE.length];
+  /** @param {Config} c */
+  const rename = (c) => (c && !c.error ? { ...c, alias: next(), description: next() } : c);
+  return {
+    ...house,
+    states: house.states.map((s) => ({ ...s, attributes: { ...s.attributes, friendly_name: next() } })),
+    // Zones are keyed by name, so two of them are named after Object's own properties.
+    areas: house.areas.map((a, k) => ({ ...a, name: ["__proto__", "constructor"][k] ?? next() })),
+    labels: house.labels.map((l, k) => ({ ...l, name: k === 0 ? "toString" : next() })),
+    devices: house.devices.map((d) => ({ ...d, name: next(), name_by_user: next() })),
+    categories: { automation: house.categories.automation.map((c) => ({ ...c, name: next() })), script: house.categories.script.map((c) => ({ ...c, name: next() })) },
+    configs: Object.fromEntries(Object.entries(house.configs).map(([k, c]) => [k, rename(c)])),
+    scriptConfigs: Object.fromEntries(Object.entries(house.scriptConfigs).map(([k, c]) => [k, rename(c)])),
+  };
+}

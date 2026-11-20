@@ -24,6 +24,20 @@ import { asList, isTemplate } from "./util.js";
  * @property {string} [timeZone] Home Assistant's time zone, for time and sun conditions; the browser's if omitted.
  */
 
+/**
+ * Templates that only make sense while the automation runs: they name the trigger, a loop, a
+ * wait or one of the automation's own variables, so rendering them now would mislead.
+ * @param {string[]} vars Variable names from the config, as written (any text at all).
+ * @returns {(template: string) => boolean}
+ */
+export const runTimeTemplate = (vars) => {
+  const names = new Set(["trigger", "this", "repeat", "wait", ...vars.filter((v) => typeof v === "string")]);
+  return (t) => {
+    for (const word of t.match(/[A-Za-z_][A-Za-z0-9_]*/g) || []) if (names.has(word)) return true;
+    return false;
+  };
+};
+
 /** @param {Tri[]} rs @returns {Tri} */
 const and3 = (rs) => (rs.includes(false) ? false : rs.includes(null) ? null : true);
 /** @param {Tri[]} rs @returns {Tri} */

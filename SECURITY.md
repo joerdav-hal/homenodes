@@ -26,7 +26,16 @@ it, and the Home Assistant and HomeNodes versions. You should hear back within a
 - **What you install is what's here.** The frontend has no build step, bundler or runtime
   dependency.
 
-`scripts/check.mjs` enforces the first, third and fourth points on every change in CI.
+`scripts/check.mjs` enforces the first, third and fourth points on every change in CI, and
+`scripts/browser-check.mjs` renders a house of hostile names in headless Chrome and fails if any
+of them becomes an element, an attribute or a script.
+
+## Load on Home Assistant
+
+- At most 50 live template subscriptions, each limited by Home Assistant to 3 seconds of
+  rendering, and none while the tab is in the background.
+- History and logbook queries cover at most 3 days (history) or 30 days (activity heat), and
+  the panel stops waiting after 60 seconds.
 
 ## In scope
 

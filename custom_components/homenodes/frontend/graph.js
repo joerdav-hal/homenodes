@@ -378,13 +378,14 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
   /** @param {GraphNode} n */
   const targetArea = (n) => {
     for (const out of [true, false]) {
-      /** @type {Record<string, number>} */
-      const counts = {};
+      // Maps, not objects: an area may be called anything, "__proto__" included.
+      /** @type {Map<string, number>} */
+      const counts = new Map();
       for (const e of edgeList) {
         const o = out ? (e.src === n.id ? nodes.get(e.dst) : null) : (e.dst === n.id ? nodes.get(e.src) : null);
-        if (o?.area) counts[o.area] = (counts[o.area] || 0) + 1;
+        if (o?.area) counts.set(o.area, (counts.get(o.area) || 0) + 1);
       }
-      const top = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+      const top = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
       if (top) return top[0];
     }
     return null;
@@ -405,13 +406,13 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
   for (const n of list) if (n.kind === "automation" || n.kind === "script") n.cluster = ownerZone(n);
   for (const n of list) {
     if (n.cluster) continue;
-    /** @type {Record<string, number>} */
-    const counts = {};
+    /** @type {Map<string, number>} */
+    const counts = new Map();
     for (const e of edgeList) {
       const o = e.src === n.id ? nodes.get(e.dst) : e.dst === n.id ? nodes.get(e.src) : null;
-      if (o?.cluster) counts[o.cluster] = (counts[o.cluster] || 0) + 1;
+      if (o?.cluster) counts.set(o.cluster, (counts.get(o.cluster) || 0) + 1);
     }
-    const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const ranked = [...counts].sort((a, b) => b[1] - a[1]);
     n.cluster = ranked.length === 1 ? ranked[0][0] : n.area || ranked[0]?.[0] || tr("Shared");
   }
   /** @type {Graph["refsOf"]} */

@@ -143,6 +143,12 @@ svg.map.panning { cursor: grabbing; }
 .drawer .id { font-size: 12px; color: var(--muted); word-break: break-all; }
 .drawer .desc { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); margin: 12px 0 0; max-width: 60ch; }
 .drawer .acts { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 4px; }
+.drawer .acts .ask { flex-basis: 100%; font-weight: 500; }
+/* Names go straight into these, so each is its own direction island. */
+.drawer h2, .drawer span, .drawer dd { unicode-bidi: isolate; }
+.drawer h2, .drawer p, .drawer li, .drawer dd { overflow-wrap: anywhere; }
+.btn.danger { background: var(--block); color: #fff; }
+.btn.danger:hover { background: color-mix(in srgb, var(--block) 85%, #000); }
 .facts { display: grid; grid-template-columns: 92px 1fr; gap: 7px 12px; margin: 16px 0 0; font-size: 13px; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }

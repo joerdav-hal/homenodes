@@ -18,3 +18,13 @@ test("a translation is used for its language and its regional variants", () => {
   setLanguage("en");
   assert.equal(tr("Up next"), "Up next");
 });
+
+test("a right-to-left name is isolated, so it can't reverse the sentence around it", async () => {
+  const { isolate } = await import("../../custom_components/homenodes/frontend/strings.js");
+  assert.equal(tr("{name} doesn't exist", { name: "Kitchen" }), "Kitchen doesn't exist");
+  assert.equal(tr("{name} doesn't exist", { name: "מטבח" }), "⁨מטבח⁩ doesn't exist");
+  // An unterminated override is dropped and the value is closed off.
+  assert.equal(isolate("‮evil"), "⁨evil⁩");
+  assert.equal(isolate("a⁩b"), "⁨ab⁩");
+  assert.equal(isolate("12 °C"), "12 °C");
+});

@@ -3,10 +3,12 @@
 
 import { STORE_KEY, LEGACY_STORE_KEY, ACTIVE, ROLE_RANK, SIZE, TOGGLEABLE, outcome } from "./constants.js";
 import { hiddenEntities, panelSettings, settingsChanged } from "./settings.js";
+import { parseSaved, serializeSaved } from "./saved.js";
+import { Latest, TimeoutError, reason, within } from "./query.js";
 import { tr, setLanguage } from "./strings.js";
 import { asList, isTemplate, capital } from "./util.js";
 import { buildGraph, resolvePath, isOwner, isLeaf } from "./graph.js";
-import { evalConditions, branchConditions } from "./conditions.js";
+import { evalConditions, runTimeTemplate, branchConditions } from "./conditions.js";
 import { nextAt } from "./schedule.js";
 import { layout, wirePath } from "./layout.js";
 import { ago, inFmt, clock, hhmm, dayTime, fmtState, yaml, setTimeFormat } from "./format.js";
@@ -14,6 +16,11 @@ import { expandBlueprints, blueprintName } from "./blueprints.js";
 import { instantIn, partsIn } from "./time.js";
 import { h, s, ICONS, domainName, nodeIcon, icon, glyph } from "./dom.js";
 import { CSS } from "./styles.js";
+
+// Live template conditions, each a subscription Home Assistant re-renders on every change it uses.
+const MAX_TEMPLATES = 50;
+// How long to wait for a reply: history and logbook scans can be slow on a big recorder.
+const SLOW = 60e3, QUICK = 15e3;
 
 /** @typedef {import("./graph.js").GraphNode} GraphNode */
 /** @typedef {import("./graph.js").GraphEdge} GraphEdge */
@@ -47,6 +54,13 @@ class HomeNodesPanel extends HTMLElement {
     this._tplSubs = new Map();
     this._mode = "live";
     this._narrow = false;
+    this._latest = new Latest();
+    // In a background tab nobody is watching: drop every subscription, and catch up on return.
+    this._onVisibility = () => {
+      if (!this._ready) return;
+      if (document.hidden) this._unsubscribe();
+      else { this._subscribe(); this._evalAll(); }
+    };
   }
 
   set hass(hass) {
@@ -75,8 +89,11 @@ class HomeNodesPanel extends HTMLElement {
     if (this._hass && !this._started) this._start();
     if (this._ready) { this._subscribe(); this._evalAll(); }
     this._clock = setInterval(() => this._tickClock(), 30000);
+    document.addEventListener("visibilitychange", this._onVisibility);
   }
   disconnectedCallback() {
+    document.removeEventListener("visibilitychange", this._onVisibility);
+    this._latest.cancelAll();
     clearInterval(this._clock);
     this._unsubscribe();
     this._histPause();
@@ -184,24 +201,11 @@ class HomeNodesPanel extends HTMLElement {
     if (this._opts.heat) this._loadHeat();
   }
   // A saved layout, or the one saved under the name this project had before, so it carries over.
-  // A saved layout, or the one saved under the name this project had before, so it carries over.
-  // Layouts from before grouping was a choice were grouped by [Tag], so they keep that.
   async _loadSaved() {
     const get = (key) => this._ws({ type: "frontend/get_user_data", key }).then((r) => r?.value ?? null, () => null);
     let v = await get(STORE_KEY), legacy = false;
     if (!v) { v = await get(LEGACY_STORE_KEY); legacy = !!v; }
-    if (!v || typeof v !== "object") return null;
-    const old = legacy || v.v === 2 || (!v.posBy && v.pos);
-    const opts = { ...(v.opts && typeof v.opts === "object" ? v.opts : {}) };
-    delete opts.focus;
-    if (!opts.grouping) opts.grouping = old ? "tag" : this._settings.grouping;
-    const object = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
-    return {
-      opts,
-      view: v.view && Number.isFinite(v.view.k) ? v.view : null,
-      posBy: object(v.posBy ?? (v.pos ? { tag: v.pos } : {})),
-      collapsedBy: object(v.collapsedBy ?? (Array.isArray(v.collapsed) ? { tag: v.collapsed } : {})),
-    };
+    return parseSaved(v, { legacy, grouping: this._settings.grouping });
   }
   // ------------------------------------------------------------ shell
 
@@ -582,6 +586,8 @@ class HomeNodesPanel extends HTMLElement {
 
   _evalAll() {
     if (!this._graph) return;
+    const wanted = new Set();
+    this._tplOverflow = new Set();
     const live = this._mode === "live";
     const states = this._states();
     const now = new Date(this._ref());
@@ -590,7 +596,8 @@ class HomeNodesPanel extends HTMLElement {
       if (n.kind !== "automation" || !n.config) continue;
       const cfg = n.config;
       const vars = Object.keys({ ...(cfg.variables || {}), ...(cfg.trigger_variables || {}) });
-      const skipTpl = (t) => !live || /\b(trigger|this|repeat|wait)\b/.test(t) || vars.some((v) => new RegExp(`\\b${v}\\b`).test(t));
+      const runTime = runTimeTemplate(vars);
+      const skipTpl = (t) => !live || runTime(t);
       const res = new Map();
       const rep = (id, ok) => {
         const prev = res.get(id);
@@ -601,11 +608,12 @@ class HomeNodesPanel extends HTMLElement {
       const ctx = { states, now, tpl: this._tpl, resolve, skipTpl, timeZone: this._tz };
       const verdict = evalConditions(top, { ...ctx, report: (id, ok, why) => { rep(id, ok); if (ok === false && !fails.has(id)) fails.set(id, why); } });
       for (const c of branchConditions(cfg.actions ?? cfg.action)) evalConditions(c, { ...ctx, report: rep });
-      if (live) this._watchTemplates([top, ...branchConditions(cfg.actions ?? cfg.action)], skipTpl);
+      if (live) this._watchTemplates(n, [top, ...branchConditions(cfg.actions ?? cfg.action)], skipTpl, wanted);
       n.condRes = res;
       const why = [...new Set([...fails].map(([id, w]) => this._reason(id, w)))];
       n.blocked = verdict === false ? (why.length ? why : [tr("its conditions")]) : null;
     }
+    if (live) this._dropTemplates(wanted);
     this._applyCondClasses();
     this._repaintOwners();
   }
@@ -628,7 +636,9 @@ class HomeNodesPanel extends HTMLElement {
     }
   }
 
-  _watchTemplates(conds, skip) {
+  // Each one is rendered by Home Assistant on every change it depends on, so they are capped, and
+  // a slow one is cut off by the server rather than left to run.
+  _watchTemplates(owner, conds, skip, wanted) {
     const c = this._hass.connection;
     if (!c?.subscribeMessage) return;
     const found = [];
@@ -641,11 +651,22 @@ class HomeNodesPanel extends HTMLElement {
     };
     walk(conds);
     for (const t of found) {
-      if (this._tplSubs.has(t) || skip(t)) continue;
+      if (skip(t)) continue;
+      if (!this._tplSubs.has(t) && this._tplSubs.size >= MAX_TEMPLATES) { this._tplOverflow.add(owner.id); continue; }
+      wanted.add(t);
+      if (this._tplSubs.has(t)) continue;
       this._tplSubs.set(t, c.subscribeMessage((msg) => {
         this._tpl.set(t, msg.error ? { result: null } : { result: msg.result, entities: msg.listeners?.entities || [] });
         this._evalSoon();
-      }, { type: "render_template", template: t, report_errors: false }).catch(() => null));
+      }, { type: "render_template", template: t, report_errors: false, timeout: 3 }).catch(() => null));
+    }
+  }
+  _dropTemplates(wanted) {
+    for (const [t, p] of this._tplSubs) {
+      if (wanted.has(t)) continue;
+      p?.then?.((u) => u && u());
+      this._tplSubs.delete(t);
+      this._tpl.delete(t);
     }
   }
 
@@ -939,14 +960,14 @@ class HomeNodesPanel extends HTMLElement {
     clearTimeout(this._saveT);
     this._saveT = setTimeout(() => {
       this._remember();
-      const value = { v: 3, posBy: this._posBy, collapsedBy: this._collapsedBy, view: this._focusing ? this._homeView : this._view, opts: this._opts };
+      const value = serializeSaved({ posBy: this._posBy, collapsedBy: this._collapsedBy, view: this._focusing ? this._homeView : this._view, opts: this._opts });
       this._ws({ type: "frontend/set_user_data", key: STORE_KEY, value }).catch((e) => console.warn("homenodes: could not save layout", e));
     }, 800);
   }
 
   // Note the current grouping's positions and collapsed areas, before anything changes them.
   _remember() {
-    const pos = {};
+    const pos = Object.create(null);
     for (const n of this._nodes.values()) pos[n.id] = [n.hx ?? n.x, n.hy ?? n.y];
     const g = this._opts.grouping;
     this._posBy = { ...this._posBy, [g]: pos };
@@ -987,6 +1008,15 @@ class HomeNodesPanel extends HTMLElement {
     return this._hass.callService(domain, service, data).catch((e) => console.warn("automap:", e));
   }
   _toggleEntity(id) { return this._call("homeassistant", "toggle", { entity_id: id }); }
+  // Ask in place of a row of buttons. Cancel takes the focus, so a stray Enter does nothing.
+  _confirmIn(row, question, label, act) {
+    const kids = [...row.childNodes];
+    const back = () => { row.replaceChildren(...kids); row.onkeydown = null; };
+    const cancel = h("button", { class: "btn outline", onclick: back }, tr("Cancel"));
+    row.replaceChildren(h("span", { class: "ask", role: "alert" }, question), h("button", { class: "btn danger", onclick: () => { back(); act(); } }, label), cancel);
+    row.onkeydown = (e) => { if (e.key === "Escape") { e.stopPropagation(); back(); } };
+    cancel.focus();
+  }
 
   // ------------------------------------------------------------ focus, search
 
@@ -1261,7 +1291,7 @@ class HomeNodesPanel extends HTMLElement {
       const controls = this._settings.controls;
       if (n.kind === "automation") {
         if (controls) acts.append(btn(tr("Run"), "primary", () => this._call("automation", "trigger", { entity_id: n.id, skip_condition: false }), { live: true, title: tr("Run as if triggered; its conditions still apply") }),
-          btn(tr("Run actions"), "outline", () => this._call("automation", "trigger", { entity_id: n.id, skip_condition: true }), { live: true, title: tr("Run the actions and skip the conditions") }),
+          btn(tr("Run actions"), "outline", () => this._confirmIn(acts, tr("Skip the conditions and run its actions now?"), tr("Run actions"), () => this._call("automation", "trigger", { entity_id: n.id, skip_condition: true })), { live: true, title: tr("Run the actions and skip the conditions") }),
           btn(off ? tr("Enable") : tr("Disable"), "outline", () => this._call("automation", off ? "turn_on" : "turn_off", { entity_id: n.id }), { live: true }));
         if (cid) acts.append(btn(tr("Open editor"), controls ? "outline" : "primary", () => this._navigate(`/config/automation/edit/${cid}`)));
       } else {
@@ -1335,7 +1365,7 @@ class HomeNodesPanel extends HTMLElement {
   async _loadRuns(n, ul, runAt) {
     const key = this._traceKey(n);
     let list = [];
-    try { if (key.item_id) list = await this._ws({ type: "trace/list", ...key }); } catch (_) { /* no traces */ }
+    try { if (key.item_id) list = await within(this._ws({ type: "trace/list", ...key }), QUICK); } catch (_) { /* no traces */ }
     if (!ul.isConnected) return;
     list.sort((a, b) => Date.parse(b.timestamp.start) - Date.parse(a.timestamp.start));
     if (!list.length) { ul.replaceChildren(h("li", { class: "static" }, tr("No stored runs yet. Home Assistant keeps the last five."))); return; }
@@ -1355,7 +1385,10 @@ class HomeNodesPanel extends HTMLElement {
   }
   async _replay(n, summary, li) {
     this._stopReplay();
-    const t = await this._ws({ type: "trace/get", ...this._traceKey(n), run_id: summary.run_id });
+    const current = this._latest.take("replay");
+    let t;
+    try { t = await within(this._ws({ type: "trace/get", ...this._traceKey(n), run_id: summary.run_id }), QUICK); } catch (e) { console.warn("homenodes: couldn't load the run", e); return; }
+    if (!current() || !li.isConnected) return;
     const cfg = t.config || n.config || {};
     const steps = [];
     for (const [path, arr] of Object.entries(t.trace || {})) for (const st of arr) steps.push({ path, ts: Date.parse(st.timestamp), result: st.result, error: st.error });
@@ -1483,18 +1516,27 @@ class HomeNodesPanel extends HTMLElement {
   async _loadHeat() {
     const ids = [...this._nodes.values()].filter(isOwner).map((n) => n.id);
     const days = this._settings.heatDays;
+    const current = this._latest.take("heat");
     const end = new Date(), start = new Date(end.getTime() - days * 86400e3);
     const span = { start_time: start.toISOString(), end_time: end.toISOString(), entity_ids: ids };
     let counts = {}, approx = false;
     try {
-      const lb = await this._ws({ type: "logbook/get_events", ...span });
+      const lb = await within(this._ws({ type: "logbook/get_events", ...span }), SLOW);
       for (const e of lb) if (/^(triggered|started)/.test(e.message || "")) counts[e.entity_id] = (counts[e.entity_id] || 0) + 1;
-    } catch (_) {
+    } catch (first) {
       // No logbook: each run writes a row or two to the recorder, which is near enough.
       approx = true;
-      const hist = await this._ws({ type: "history/history_during_period", ...span, minimal_response: false, no_attributes: true, significant_changes_only: false });
-      for (const [id, rows] of Object.entries(hist || {})) counts[id] = Math.round(Math.max(0, rows.length - 1) / 2);
+      try {
+        if (first instanceof TimeoutError) throw first;
+        const hist = await within(this._ws({ type: "history/history_during_period", ...span, minimal_response: false, no_attributes: true, significant_changes_only: false }), SLOW);
+        for (const [id, rows] of Object.entries(hist || {})) counts[id] = Math.round(Math.max(0, rows.length - 1) / 2);
+      } catch (e) {
+        console.warn("homenodes: couldn't count runs for activity heat:", reason(e));
+        if (current()) { this._heat = null; this._repaintOwners(); }
+        return;
+      }
     }
+    if (!current()) return;
     this._heat = { counts, approx, days };
     this._repaintOwners();
   }
@@ -1528,6 +1570,7 @@ class HomeNodesPanel extends HTMLElement {
     for (const n of this._nodes.values()) {
       if (n.missing) out.push({ sev: "error", kind: tr("Broken references"), id: [...n.wires.map((e) => (e.a === n ? e.b : e.a)).filter(isOwner)][0]?.id || n.id, text: tr("{name} doesn't exist", { name: n.label }), note: tr("used by {names}", { names: users(n) }) });
       if (isOwner(n) && (n.broken || states[n.id]?.state === "unavailable")) out.push({ sev: "error", kind: tr("Automations that can't load"), id: n.id, text: label(n), note: n.broken || "unavailable" });
+      if (this._tplOverflow?.has(n.id)) out.push({ sev: "info", kind: tr("Template conditions not checked live"), id: n.id, text: label(n), note: tr("more than {n} templates are in use", { n: MAX_TEMPLATES }) });
       if (isOwner(n) && n.blueprint?.error) out.push({ sev: "warn", kind: tr("Blueprints that can't be read"), id: n.id, text: label(n), note: `${n.blueprint.path}: ${n.blueprint.error}` });
     }
     // Listed once per entity, with everything that waits on it.
@@ -1571,7 +1614,7 @@ class HomeNodesPanel extends HTMLElement {
   async _loadFights() {
     const targets = [...new Set(this._edges.filter((e) => e.role === "action" && e.b.kind === "entity" && !e.b.missing).map((e) => e.dst))];
     const end = new Date(), start = new Date(end.getTime() - 86400e3);
-    const lb = await this._ws({ type: "logbook/get_events", start_time: start.toISOString(), end_time: end.toISOString(), entity_ids: targets });
+    const lb = await within(this._ws({ type: "logbook/get_events", start_time: start.toISOString(), end_time: end.toISOString(), entity_ids: targets }), SLOW);
     const by = new Map();
     for (const e of lb) if (e.context_entity_id?.startsWith("automation.") && e.state != null) {
       if (!by.has(e.entity_id)) by.set(e.entity_id, []);
@@ -1617,7 +1660,10 @@ class HomeNodesPanel extends HTMLElement {
       this._refreshHealth();
     };
     render(tr("Checking the last 24 hours for automations fighting each other…"));
-    try { await this._loadFights(); render(null); } catch (_) { this._fights = []; render(tr("Checking for fights needs Home Assistant's logbook, which isn't enabled.")); }
+    try { await this._loadFights(); render(null); } catch (e) {
+      this._fights = [];
+      render(e instanceof TimeoutError ? tr("Checking for fights gave up: the logbook took too long to answer.") : tr("Checking for fights needs Home Assistant's logbook, which isn't enabled."));
+    }
   }
   // ------------------------------------------------------------ history
 
@@ -1651,15 +1697,22 @@ class HomeNodesPanel extends HTMLElement {
   }
   async _loadHistory(hours) {
     this._histPause();
+    const current = this._latest.take("history");
     this._histNote.textContent = tr("Loading…");
+    try { await this._fetchHistory(hours, current); } catch (e) {
+      if (current()) this._histNote.textContent = tr("Couldn't load history: {error}", { error: reason(e) });
+    }
+  }
+  async _fetchHistory(hours, current) {
     const end = Date.now(), start = end - hours * 3600e3;
     const iso = (t) => new Date(t).toISOString();
     const ids = [...this._nodes.values()].filter((n) => this._hass.states[n.id]).map((n) => n.id);
     const span = { start_time: iso(start), end_time: iso(end), entity_ids: ids };
     const [hist, lb] = await Promise.all([
-      this._ws({ type: "history/history_during_period", ...span, minimal_response: true, no_attributes: true, significant_changes_only: false }),
-      this._ws({ type: "logbook/get_events", ...span }).catch(() => null),
+      within(this._ws({ type: "history/history_during_period", ...span, minimal_response: true, no_attributes: true, significant_changes_only: false }), SLOW),
+      within(this._ws({ type: "logbook/get_events", ...span }), SLOW).catch(() => null),
     ]);
+    if (!current() || this._mode !== "history") return;
     const ms = (v) => (typeof v === "number" ? v * 1000 : Date.parse(v));
     const series = new Map(), events = [];
     for (const [id, rows] of Object.entries(hist || {})) {
@@ -1677,7 +1730,8 @@ class HomeNodesPanel extends HTMLElement {
     } else {
       // Without the logbook, a run is only visible as rows on the automation's own history.
       const owners = ids.filter((id) => /^(automation|script)\./.test(id));
-      const ah = await this._ws({ type: "history/history_during_period", ...span, entity_ids: owners, minimal_response: false, no_attributes: true, significant_changes_only: false });
+      const ah = await within(this._ws({ type: "history/history_during_period", ...span, entity_ids: owners, minimal_response: false, no_attributes: true, significant_changes_only: false }), SLOW);
+      if (!current() || this._mode !== "history") return;
       for (const [id, rows] of Object.entries(ah || {})) {
         let last = 0;
         for (const r of rows.slice(1)) { const t = ms(r.lu ?? r.last_updated); if (t - last > 3000) events.push({ t, kind: "run", id, source: "" }); last = t; }
@@ -1777,6 +1831,7 @@ class HomeNodesPanel extends HTMLElement {
   }
   _exitHistory() {
     this._histPause();
+    this._latest.take("history");
     this._mode = "live";
     this._histStates = null;
     this._stage.classList.remove("hist");

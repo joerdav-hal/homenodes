@@ -81,7 +81,8 @@ to replay. Its query parameters (`?theme=light`, `?select=<entity id>`, `?open=h
 `?copies=20` and more) are listed at the top of [dev/index.html](dev/index.html).
 
 Option parameters (`?controls=0`, `?grouping=label`, `?heatdays=3`, `?hide=lighting`) stand in
-for the integration's options.
+for the integration's options, and `?hostile` swaps every name for one that tries to be markup,
+script or a layout breaker. `npm run browser` runs both houses through headless Chrome.
 
 Never commit data captured from a real Home Assistant: it holds names and locations.
 `dev/private/` is ignored for local experiments.

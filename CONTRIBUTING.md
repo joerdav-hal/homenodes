@@ -28,6 +28,7 @@ Thanks for helping. A few rules keep HomeNodes small, safe and easy to review.
 
 ```bash
 npm run ci              # frontend: check, tests and type check, as CI runs them
+npm run browser         # hostile names in headless Chrome (needs Chrome, or CHROME=path)
 nix develop -c pytest   # integration tests (or pip; see the README)
 ruff check . && ruff format --check .
 ```

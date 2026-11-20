@@ -54,14 +54,26 @@ Debt carried forward:
   (`frontend/update_panel`) overrides what an integration registers, so they would look broken.
 - Kept per user: condition status, in the View menu, as it was.
 
-## 4. Safety
+## 4. Safety (done)
 
 - [x] A read-only mode: controls are off unless the integration's options allow them.
-- [ ] A confirmation before "Run actions"; toggling kept to an allowlist of domains.
-- [ ] Cap live template subscriptions and drop them while the panel is hidden.
-- [ ] Bounded, cancellable history and logbook queries.
-- [ ] A versioned format for saved layouts that tolerates bad data.
-- [ ] Tests with hostile names: markup, right-to-left text, very long strings.
+- [x] A confirmation before "Run actions", in place, with Cancel focused. Toggling was already
+  kept to lights, switches, fans and toggle helpers.
+- [x] At most 50 live template subscriptions (the rest are listed in Health), each with Home
+  Assistant's 3-second render limit, pruned when unused, and none at all in a background tab.
+- [x] History, logbook and trace queries give up after a time limit, show why, and a reply
+  overtaken by a newer request is ignored. Home Assistant can't cancel a query, so this is
+  as cancellable as it gets.
+- [x] Saved layouts parsed by `saved.js`: any version, bounded in size, and a bad value
+  costs only itself. Prototype keys can't reach anything.
+- [x] A hostile house (`?hostile`): markup, attribute breakers, right-to-left overrides, a
+  600-character name, templates, `__proto__` and `constructor` as names. Node tests over the
+  graph and layout, and `npm run browser`, which clicks through it in headless Chrome and fails
+  on any foreign element, `on…` attribute, script or error. It found an area called
+  `__proto__` vanishing into another zone, and an automation variable named like a regular
+  expression stopping all condition checks; both fixed.
+- [x] Right-to-left names placed in a sentence are wrapped in Unicode isolates, so they can't
+  reverse the words around them.
 
 ## 5. Scale
 

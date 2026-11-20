@@ -16,6 +16,7 @@ declare module "node:assert/strict" {
     notEqual(actual: unknown, expected: unknown, message?: string): void;
     deepEqual<T>(actual: unknown, expected: T, message?: string): asserts actual is T;
     match(value: string, pattern: RegExp, message?: string): void;
+    fail(message?: string): never;
     throws(fn: () => unknown, message?: string): void;
   }
   const assert: Assert;
@@ -35,7 +36,11 @@ declare module "node:fs/promises" {
 
 declare module "node:http" {
   interface Response { writeHead(status: number, headers?: Record<string, string>): Response; end(body?: string | Uint8Array): void }
-  export function createServer(handler: (req: { url?: string }, res: Response) => void): { listen(port: number, host: string, ready: () => void): void };
+  export function createServer(handler: (req: { url?: string }, res: Response) => void): {
+    listen(port: number, host: string, ready: () => void): void;
+    address(): { port: number };
+    close(): void;
+  };
 }
 
 declare module "node:path" {
@@ -48,6 +53,13 @@ declare module "node:path" {
 
 declare module "node:url" {
   export function fileURLToPath(url: string | URL): string;
+  export function pathToFileURL(path: string): URL;
+}
+
+declare module "node:child_process" {
+  interface Stream { on(event: "data", fn: (chunk: string) => void): void }
+  interface Child { stdout: Stream; on(event: "error" | "close", fn: (x?: unknown) => void): void }
+  export function spawn(command: string, args: string[]): Child;
 }
 
 declare const process: { exitCode?: number; argv: string[]; env: Record<string, string | undefined>; stdout: { write(s: string): void } };

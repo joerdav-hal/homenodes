@@ -4,13 +4,16 @@
   "description": "Every Home Assistant automation as a live node graph.",
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "node --test tests/frontend/*.test.js",
     "typecheck": "npx --yes typescript@5.9.3 -p tsconfig.json && npx --yes typescript@5.9.3 -p tsconfig.panel.json",
     "check": "node scripts/check.mjs && node scripts/strings.mjs --check",
     "strings": "node scripts/strings.mjs",
     "dev": "node scripts/serve.mjs",
-    "ci": "npm run check && npm test && npm run typecheck"
+    "ci": "npm run check && npm test && npm run typecheck",
+    "browser": "node scripts/browser-check.mjs"
   }
 }

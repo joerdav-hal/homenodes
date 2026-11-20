@@ -24,6 +24,8 @@ jobs:
         run: node scripts/strings.mjs --check
       - name: Unit tests
         run: node --test tests/frontend/*.test.js
+      - name: Hostile names render as text, in headless Chrome
+        run: node scripts/browser-check.mjs
       - name: Type check
         run: |
           npx --yes typescript@5.9.3 -p tsconfig.json

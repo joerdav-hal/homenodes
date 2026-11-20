@@ -14,12 +14,17 @@ body.dark { --primary-background-color: #111111; --card-background-color: #1c1c1
 //   ?center=<id>&zoom=<k> ?wrap (a height-less container, like HA's) ?nologbook ?shot (hide these controls)
 //   ?tz=<IANA zone> (Home Assistant's) ?timeformat=24|am_pm|language|system ?showtime=server|local ?noblueprints
 //   The integration's options: ?controls=0 ?grouping=area|label|category|tag ?heatdays=<n> ?hide=<label id>,…
-import { makeHouse } from "./fake-house.js";
+//   ?hostile (names that try to be markup, script and more) ?check (click through and report; see browser-check.mjs)
+import { HOSTILE, makeHostile, makeHouse } from "./fake-house.js";
+window.__errors = [];
+addEventListener("error", (e) => window.__errors.push(String(e.message)));
+addEventListener("unhandledrejection", (e) => window.__errors.push(String(e.reason?.message || e.reason)));
 await import(`../custom_components/homenodes/frontend/homenodes-panel.js?t=${Date.now()}`);
 
 const q = new URLSearchParams(location.search);
 const now = Date.now();
-const house = makeHouse({ now, copies: Number(q.get("copies") || 1) });
+const plainHouse = makeHouse({ now, copies: Number(q.get("copies") || 1) });
+const house = q.has("hostile") ? makeHostile(plainHouse) : plainHouse;
 let states = Object.fromEntries(house.states.map((s) => [s.entity_id, s]));
 const subs = {};
 const inRange = (m, t) => t >= Date.parse(m.start_time) / 1000 && t <= Date.parse(m.end_time) / 1000;
@@ -127,6 +132,49 @@ document.getElementById("play").onclick = async () => {
   if (q.get("open") === "upnext") el._showUpNext();
   if (q.get("open") === "history") el._enterHistory();
   if (q.get("open") === "heat") el._setOpt("heat", true);
+  if (q.has("check")) await check();
   document.body.dataset.ready = "1";
 })();
+
+// Visits every automation and script, some entities, Health and Up next, and each grouping, then
+// reports anything that isn't one of the panel's own elements, any on* attribute, and any error.
+async function check() {
+  const OURS = new Set("span div button li ul p h1 h2 h3 h4 hr b summary small select pre option input details time style label dt dl dd canvas aside svg circle defs g path pattern rect text title use symbol line".split(" "));
+  const problems = [], seen = new Set();
+  let text = "";
+  const settle = () => new Promise((r) => setTimeout(r, 80));
+  const scan = (where) => {
+    for (const e of el.shadowRoot.querySelectorAll("*")) {
+      const tag = e.localName;
+      if (!OURS.has(tag) && !seen.has(`${where}:${tag}`)) { seen.add(`${where}:${tag}`); problems.push(`${where}: unexpected <${tag}>`); }
+      for (const a of e.attributes) {
+        if (/^on/i.test(a.name)) problems.push(`${where}: <${tag} ${a.name}>`);
+        if (/^\s*javascript:/i.test(a.value) && /href$/i.test(a.name)) problems.push(`${where}: <${tag} ${a.name}=javascript:>`);
+      }
+    }
+    text += el.shadowRoot.textContent;
+  };
+  const visit = async (where, act) => { act(); await settle(); scan(where); };
+  const nodes = [...el._nodes.values()];
+  for (const n of nodes.filter((n) => n.kind === "automation" || n.kind === "script")) await visit(n.id, () => el._select(n.id, false, null, true));
+  for (const n of nodes.filter((n) => n.kind === "entity").slice(0, 12)) await visit(n.id, () => el._select(n.id, false, null, true));
+  await visit("overview", () => el._select(null, false, null, true));
+  await visit("health", () => el._showHealth());
+  await visit("up next", () => el._showUpNext());
+  el._select(null, false, null, true);
+  for (const g of ["label", "category", "tag", "area"]) { await el._setGrouping(g); await settle(); scan(`group by ${g}`); }
+  // Shown as text means its markup survives, verbatim, somewhere in the panel's text.
+  const clean = (t) => t.replace(/[\u0000-\u001f\u200b\u202a-\u202e]/g, "");
+  const shown = clean(text);
+  if (q.has("hostile")) for (const name of HOSTILE) {
+    const probe = clean(name).slice(0, 24);
+    if (!shown.includes(probe)) problems.push(`never shown as text: ${JSON.stringify(probe)}`);
+  }
+  if (window.__pwned) problems.push("hostile script ran");
+  for (const e of window.__errors) problems.push(`error: ${e}`);
+  const out = document.createElement("pre");
+  out.id = "check";
+  out.textContent = JSON.stringify({ hostile: q.has("hostile"), problems: [...new Set(problems)], nodes: nodes.length });
+  document.body.append(out);
+}
 </script></body></html>

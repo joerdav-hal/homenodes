@@ -31,5 +31,14 @@ export const setLanguage = (language) => {
  */
 export const tr = (message, vars) => {
   const text = table[message] ?? message;
-  return vars ? text.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? "")) : text;
+  return vars ? text.replace(/\{(\w+)\}/g, (_, k) => isolate(String(vars[k] ?? ""))) : text;
 };
+
+// Right-to-left letters and direction controls.
+const BIDI = /[\u0590-\u08ff\u200e\u200f\u202a-\u202e\u2066-\u2069\ufb1d-\ufdff\ufe70-\ufefc]/;
+/**
+ * A value that could change the direction of the text around it is wrapped in Unicode isolates
+ * (FSI ... PDI), so a name can't reverse the sentence it is placed in. Others are left alone.
+ * @param {string} value
+ */
+export const isolate = (value) => (BIDI.test(value) ? `\u2068${value.replace(/[\u202a-\u202e\u2066-\u2069]/g, "")}\u2069` : value);

@@ -115,3 +115,16 @@ test("durSecs reads every way HA writes a duration", () => {
   assert.equal(durSecs(null), 0);
   assert.equal(durSecs("{{ x }}"), null);
 });
+
+test("run-time templates: trigger, loops, waits and the automation's own variables", async () => {
+  const { runTimeTemplate } = await import("../../custom_components/homenodes/frontend/conditions.js");
+  const skip = runTimeTemplate(["target", "a(b", "[", ".*"]);
+  assert.equal(skip("{{ trigger.to_state.state == 'on' }}"), true);
+  assert.equal(skip("{{ repeat.index > 2 }}"), true);
+  assert.equal(skip("{{ states(target) == 'on' }}"), true);
+  assert.equal(skip("{{ is_state('light.targeted', 'on') }}"), false);
+  assert.equal(skip("{{ is_state('sensor.triggered', 'on') }}"), false);
+  // Names that would be broken or slow as regular expressions are only ever compared as words.
+  assert.equal(skip("{{ states('sensor.x') | float > 3 }}"), false);
+  assert.equal(skip(`{{ ${"a".repeat(50000)}! }}`), false);
+});

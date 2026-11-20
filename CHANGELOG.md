@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- "Run actions" asks first, since it skips the conditions.
+- Live template conditions are capped at 50, limited to 3 seconds of rendering each, and
+  dropped while the browser tab is in the background. Those over the cap are listed in Health.
+- History, activity heat, fights and run replays give up after a time limit and say why,
+  instead of loading forever; switching ranges quickly no longer shows an older answer.
+- Saved layouts that are damaged or from another version load what is good in them.
+- An area named `__proto__` no longer disappears, and an automation variable with symbols in
+  its name no longer stops condition checks for every automation.
+- Long names wrap in the side panel, and right-to-left names can't reverse surrounding text.
+
 - **An integration.** Add HomeNodes from Settings → Devices & services and it adds an
   admin-only panel, served from a path that changes with each release so browsers never mix
   versions. Needs Home Assistant 2024.12.

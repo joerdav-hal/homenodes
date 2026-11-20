@@ -32,8 +32,8 @@ jobs:
           node scripts/browser-bench.mjs
       - name: Type check
         run: |
-          npx --yes typescript@5.9.3 -p tsconfig.json
-          npx --yes typescript@5.9.3 -p tsconfig.panel.json
+          npx --yes -p typescript@5.9.3 tsc -p tsconfig.json
+          npx --yes -p typescript@5.9.3 tsc -p tsconfig.panel.json
 
   integration:
     runs-on: ubuntu-latest

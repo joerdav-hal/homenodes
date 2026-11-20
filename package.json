@@ -9,7 +9,7 @@
   },
   "scripts": {
     "test": "node --test tests/frontend/*.test.js",
-    "typecheck": "npx --yes typescript@5.9.3 -p tsconfig.json && npx --yes typescript@5.9.3 -p tsconfig.panel.json",
+    "typecheck": "npx --yes -p typescript@5.9.3 tsc -p tsconfig.json && npx --yes -p typescript@5.9.3 tsc -p tsconfig.panel.json",
     "check": "node scripts/check.mjs && node scripts/strings.mjs --check",
     "strings": "node scripts/strings.mjs",
     "dev": "node scripts/serve.mjs",

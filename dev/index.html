@@ -13,6 +13,7 @@ body.dark { --primary-background-color: #111111; --card-background-color: #1c1c1
 // Query parameters: ?theme=light ?select=<id> ?open=health|upnext|history|heat ?copies=<n>
 //   ?center=<id>&zoom=<k> ?wrap (a height-less container, like HA's) ?nologbook ?shot (hide these controls)
 //   ?tz=<IANA zone> (Home Assistant's) ?timeformat=24|am_pm|language|system ?showtime=server|local ?noblueprints
+//   The integration's options: ?controls=0 ?grouping=area|label|category|tag ?heatdays=<n> ?hide=<label id>,…
 import { makeHouse } from "./fake-house.js";
 await import(`../custom_components/homenodes/frontend/homenodes-panel.js?t=${Date.now()}`);
 
@@ -92,6 +93,12 @@ const callApi = async (method, path) => {
 const locale = { language: "en", time_format: q.get("timeformat") || "language", time_zone: q.get("showtime") || "local" };
 const config = { time_zone: q.get("tz") || Intl.DateTimeFormat().resolvedOptions().timeZone };
 const mk = () => ({ states, connection: conn, themes: { darkMode: dark }, language: "en", locale, config, user: { is_admin: true }, callService, callApi });
+// Without any of these the panel gets no config, as when it is added by hand with panel_custom.
+const opt = ["controls", "grouping", "heatdays", "hide"].some((k) => q.has(k));
+if (opt) el.panel = { config: {
+  controls: q.get("controls") !== "0", default_grouping: q.get("grouping") || "area", heat_days: Number(q.get("heatdays") || 7),
+  hidden_labels: q.get("hide") ? q.get("hide").split(",") : [], _panel_custom: { name: "homenodes-panel" },
+} };
 el.hass = mk();
 el.narrow = innerWidth < 870;
 (q.has("wrap") ? document.body.appendChild(document.createElement("div")) : document.body).append(el);

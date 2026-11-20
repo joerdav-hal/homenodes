@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **An integration.** Add HomeNodes from Settings → Devices & services and it adds an
+  admin-only panel, served from a path that changes with each release so browsers never mix
+  versions. Needs Home Assistant 2024.12.
+- Options: allow controls (off by default, so the map is read-only), the default grouping, the
+  activity heat window, and labels whose automations and scripts are left off the map and never
+  read.
+- Diagnostics report versions, options and counts, without names.
+- `npm run dev` serves the harness without caching, so an edited module is always the one
+  that runs.
+
 - Blueprint automations and scripts are expanded before drawing, so their wires show. A
   blueprint that can't be read, or a Home Assistant older than 2024.7, is reported on the node
   and in Health.

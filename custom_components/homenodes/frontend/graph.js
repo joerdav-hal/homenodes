@@ -102,6 +102,7 @@ import { asList, isRegId, isTemplate } from "./util.js";
  * @property {Partial<Record<"automation" | "script", CategoryRegistryEntry[]>>} [categories] Category registries by scope.
  * @property {Record<string, BlueprintUse>} [blueprints] Which entities use a blueprint, from expandBlueprints.
  * @property {Grouping} [grouping] Defaults to "area".
+ * @property {Set<string>} [hidden] Automations and scripts to leave out; anything using them sees a plain entity.
  */
 
 const PROBE = "\u0000probe";
@@ -115,7 +116,7 @@ export const isLeaf = (x) => x && typeof x === "object" && (typeof (x.action || 
  * @param {GraphInput} input
  * @returns {Graph}
  */
-export function buildGraph({ states, configs, scriptConfigs, entities, devices, areas, labels = [], categories = {}, blueprints = {}, grouping = "area" }) {
+export function buildGraph({ states, configs, scriptConfigs, entities, devices, areas, labels = [], categories = {}, blueprints = {}, grouping = "area", hidden = new Set() }) {
   const stateOf = new Map(states.map((s) => [s.entity_id, s]));
   const regById = new Map(entities.map((e) => [e.id, e]));
   const regByEid = new Map(entities.map((e) => [e.entity_id, e]));
@@ -320,6 +321,7 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
 
   for (const s of states) {
     const eid = s.entity_id;
+    if (hidden.has(eid)) continue;
     const alias = s.attributes.friendly_name || eid;
     if (eid.startsWith("automation.")) {
       const m = alias.match(/^\s*((?:\[[^\]]+\]\s*)+)(.*)$/);

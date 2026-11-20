@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { makeHouse } from "../dev/fake-house.js";
-import { buildGraph, resolvePath, summarize } from "../custom_components/homenodes/frontend/graph.js";
+import { makeHouse } from "../../dev/fake-house.js";
+import { buildGraph, resolvePath, summarize } from "../../custom_components/homenodes/frontend/graph.js";
+import { hiddenEntities } from "../../custom_components/homenodes/frontend/settings.js";
 
 const house = makeHouse({ now: new Date(2026, 10, 20, 18, 30).getTime() });
 const g = buildGraph(house);
@@ -142,4 +143,14 @@ test("repeating the house scales the graph without collisions", () => {
   const big = buildGraph(makeHouse({ copies: 3 }));
   assert.equal(big.nodes.filter((n) => n.kind === "automation").length, 3 * 19);
   assert.equal(new Set(big.nodes.map((n) => n.id)).size, big.nodes.length);
+});
+
+test("automations with a hidden label are left out, as the panel leaves out their configs", () => {
+  const hidden = hiddenEntities(house.entities, ["security"]);
+  const configs = Object.fromEntries(Object.entries(house.configs).filter(([eid]) => !hidden.has(eid)));
+  const h = buildGraph({ ...house, configs, hidden });
+  assert.deepEqual([...hidden], ["automation.front_door"]);
+  assert.equal(h.nodes.some((n) => n.id === "automation.front_door"), false);
+  assert.equal(h.edges.some((e) => e.src === "automation.front_door" || e.dst === "automation.front_door"), false);
+  assert.ok(h.nodes.some((n) => n.id === "automation.kitchen_motion_lights"));
 });

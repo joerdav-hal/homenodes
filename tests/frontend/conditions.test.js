@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { branchConditions, durSecs, evalConditions } from "../custom_components/homenodes/frontend/conditions.js";
+import { branchConditions, durSecs, evalConditions } from "../../custom_components/homenodes/frontend/conditions.js";
 
-/** @typedef {import("../types/ha").HassEntity} HassEntity */
+/** @typedef {import("../../types/ha").HassEntity} HassEntity */
 
 // Local time, so the tests mean the same thing in any time zone.
 const now = new Date(2026, 10, 20, 18, 30, 0); // a Friday

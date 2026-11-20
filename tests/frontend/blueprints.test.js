@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { makeHouse } from "../dev/fake-house.js";
-import { blueprintName, expandBlueprints } from "../custom_components/homenodes/frontend/blueprints.js";
-import { buildGraph } from "../custom_components/homenodes/frontend/graph.js";
+import { makeHouse } from "../../dev/fake-house.js";
+import { blueprintName, expandBlueprints } from "../../custom_components/homenodes/frontend/blueprints.js";
+import { buildGraph } from "../../custom_components/homenodes/frontend/graph.js";
 
 const house = makeHouse({ now: new Date(2026, 10, 20, 18, 30).getTime() });
 /** Fakes blueprint/substitute from the fake house, counting calls. */

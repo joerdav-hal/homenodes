@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -23,8 +23,46 @@ jobs:
       - name: Translation catalog is up to date
         run: node scripts/strings.mjs --check
       - name: Unit tests
-        run: node --test tests/
+        run: node --test tests/frontend/*.test.js
       - name: Type check
         run: |
           npx --yes typescript@5.9.3 -p tsconfig.json
           npx --yes typescript@5.9.3 -p tsconfig.panel.json
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+      - name: Install the test harness
+        run: pip install -r requirements_test.txt ruff==0.17.4
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Tests
+        run: pytest
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: home-assistant/actions/hassfest@07f46fd2e19967768b5fd3000f91f857452b767c # 2026.11.0
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      # Checks the GitHub repository itself (description, topics, releases), not just the files.
+      # The brands check waits for an icon in home-assistant/brands, at the HACS default list stage.
+      - uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa # main on 2026-11-20
+        with:
+          category: integration
+          ignore: brands

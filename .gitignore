@@ -3,3 +3,7 @@ node_modules/
 dev/private/
 *.log
 .DS_Store
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+result

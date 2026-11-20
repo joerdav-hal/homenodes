@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { makeHouse } from "../dev/fake-house.js";
-import { buildGraph } from "../custom_components/homenodes/frontend/graph.js";
-import { layout, wirePath } from "../custom_components/homenodes/frontend/layout.js";
-import { nextAt } from "../custom_components/homenodes/frontend/schedule.js";
-import { ago, fmtState, inFmt, yaml } from "../custom_components/homenodes/frontend/format.js";
+import { makeHouse } from "../../dev/fake-house.js";
+import { buildGraph } from "../../custom_components/homenodes/frontend/graph.js";
+import { layout, wirePath } from "../../custom_components/homenodes/frontend/layout.js";
+import { nextAt } from "../../custom_components/homenodes/frontend/schedule.js";
+import { ago, fmtState, inFmt, yaml } from "../../custom_components/homenodes/frontend/format.js";
 
-/** @typedef {import("../custom_components/homenodes/frontend/graph.js").GraphNode} GraphNode */
+/** @typedef {import("../../custom_components/homenodes/frontend/graph.js").GraphNode} GraphNode */
 
 const now = new Date(2026, 10, 20, 18, 30, 0);
 const local = (/** @type {number[]} */ ...p) => new Date(2026, 10, p[0], p[1], p[2] ?? 0, 0).getTime();

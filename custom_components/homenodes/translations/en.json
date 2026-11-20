@@ -1,0 +1,48 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add HomeNodes",
+        "description": "HomeNodes adds a panel for administrators that draws every automation and script as a live node graph. It reads your configuration and history; nothing leaves Home Assistant."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "HomeNodes is already set up. Change its options instead."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HomeNodes options",
+        "description": "To rename the panel, change its icon or hide it, edit the sidebar itself.",
+        "data": {
+          "controls": "Allow controls",
+          "default_grouping": "Group automations by",
+          "heat_days": "Activity heat window",
+          "hidden_labels": "Labels to leave off the map"
+        },
+        "data_description": {
+          "controls": "Show buttons to run, enable and disable automations and scripts, and dots that switch lights, switches, fans and toggle helpers. Off by default, so panning the map on a phone can't change anything.",
+          "default_grouping": "Used until someone picks a grouping from the panel's View menu.",
+          "heat_days": "How far back activity heat counts runs.",
+          "hidden_labels": "Automations and scripts with any of these labels are not drawn or read."
+        }
+      }
+    }
+  },
+  "selector": {
+    "grouping": {
+      "options": {
+        "area": "Area",
+        "label": "Label",
+        "category": "Category",
+        "tag": "[Tag] at the start of the name"
+      }
+    }
+  },
+  "exceptions": {
+    "panel_taken": {
+      "message": "Another panel already uses {url}. Remove it, or the panel_custom entry that adds it, then reload HomeNodes."
+    }
+  }
+}

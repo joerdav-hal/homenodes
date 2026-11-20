@@ -17,6 +17,9 @@ Thanks for helping. A few rules keep HomeNodes small, safe and easy to review.
   `translations/en.json`; CI fails if it is stale.
 - **Pure logic stays pure.** Graph extraction, conditions, schedules, layout and formatting
   must not touch the DOM, so they can be tested in Node.
+- **The integration stays thin.** The Python registers the panel and its options; the panel
+  does the work in the browser through Home Assistant's existing commands. Options the panel
+  reads are checked again in [`settings.js`](custom_components/homenodes/frontend/settings.js).
 - **Fake data only.** Tests and the harness use [`dev/fake-house.js`](dev/fake-house.js).
   Never commit data from a real Home Assistant. If a bug needs a new kind of config to
   reproduce, add it to the fake house.
@@ -24,7 +27,9 @@ Thanks for helping. A few rules keep HomeNodes small, safe and easy to review.
 ## Before opening a pull request
 
 ```bash
-npm run ci   # check, tests and type check, as CI runs them
+npm run ci              # frontend: check, tests and type check, as CI runs them
+nix develop -c pytest   # integration tests (or pip; see the README)
+ruff check . && ruff format --check .
 ```
 
 For anything visible, check it in the dev harness in both themes and at phone width

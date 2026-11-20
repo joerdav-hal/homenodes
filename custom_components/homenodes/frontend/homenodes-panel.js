@@ -2,6 +2,7 @@
 // The sidebar panel's custom element. Pure logic lives in the sibling modules.
 
 import { STORE_KEY, LEGACY_STORE_KEY, ACTIVE, ROLE_RANK, SIZE, TOGGLEABLE, outcome } from "./constants.js";
+import { hiddenEntities, panelSettings, settingsChanged } from "./settings.js";
 import { tr, setLanguage } from "./strings.js";
 import { asList, isTemplate, capital } from "./util.js";
 import { buildGraph, resolvePath, isOwner, isLeaf } from "./graph.js";
@@ -33,6 +34,8 @@ class HomeNodesPanel extends HTMLElement {
     this._collapsed = new Set();
     /** @type {{ conditions: boolean, heat: boolean, grouping: import("./graph.js").Grouping }} */
     this._opts = { conditions: true, heat: false, grouping: "area" };
+    /** The integration's options. @type {import("./settings.js").PanelSettings} */
+    this._settings = panelSettings(null);
     /** Blueprint expansions, kept between reloads. @type {Map<string, Promise<any>>} */
     this._blueprintCache = new Map();
     /** Where each automation is defined, asked once. @type {Map<string, Promise<string>>} */
@@ -55,12 +58,18 @@ class HomeNodesPanel extends HTMLElement {
   }
   get hass() { return this._hass; }
   set narrow(v) { this._narrow = v; if (this._menuBtn) this._menuBtn.hidden = !v; }
-  set panel(_) {}
+  // Changing the integration's options re-registers the panel, which hands over a new config.
+  set panel(panel) {
+    const next = panelSettings(panel);
+    if (!settingsChanged(this._settings, next)) return;
+    this._settings = next;
+    if (this._ready) this._reload();
+  }
   set route(_) {}
 
   connectedCallback() {
     // Properties set before this class was defined shadow the setters; re-apply them.
-    for (const p of ["hass", "narrow"]) {
+    for (const p of ["panel", "hass", "narrow"]) {
       if (Object.prototype.hasOwnProperty.call(this, p)) { const v = this[p]; delete this[p]; this[p] = v; }
     }
     if (this._hass && !this._started) this._start();
@@ -80,6 +89,8 @@ class HomeNodesPanel extends HTMLElement {
       await this._load();
       this._ready = true;
       await this._subscribe();
+      // Options that changed while the first load was under way.
+      if (this._loadedWith !== this._settings) await this._reload();
     } catch (e) {
       console.error("automap:", e);
       this._loading.hidden = false;
@@ -95,17 +106,22 @@ class HomeNodesPanel extends HTMLElement {
 
   async _fetchGraph() {
     const states = Object.values(this._hass.states);
-    const ids = (d) => states.filter((st) => st.entity_id.startsWith(`${d}.`)).map((st) => st.entity_id);
     const grab = (type, eid) => this._ws({ type, entity_id: eid }).then((r) => r.config, (e) => ({ error: e.message || e.code || "error" }));
     // Labels and categories are newer registries; without them, those groupings just come up empty.
     const optional = (msg) => this._ws(msg).catch(() => []);
-    const [entities, devices, areas, labels, autoCats, scriptCats, autoCfgs, scriptCfgs] = await Promise.all([
+    const [entities, devices, areas, labels, autoCats, scriptCats] = await Promise.all([
       this._ws({ type: "config/entity_registry/list" }),
       this._ws({ type: "config/device_registry/list" }),
       this._ws({ type: "config/area_registry/list" }),
       optional({ type: "config/label_registry/list" }),
       optional({ type: "config/category_registry/list", scope: "automation" }),
       optional({ type: "config/category_registry/list", scope: "script" }),
+    ]);
+    this._loadedWith = this._settings;
+    // Hidden ones aren't even read, so their configs never reach the browser.
+    const hidden = hiddenEntities(entities, this._settings.hiddenLabels);
+    const ids = (d) => states.map((st) => st.entity_id).filter((eid) => eid.startsWith(`${d}.`) && !hidden.has(eid));
+    const [autoCfgs, scriptCfgs] = await Promise.all([
       Promise.all(ids("automation").map((eid) => grab("automation/config", eid).then((c) => [eid, c]))),
       Promise.all(ids("script").map((eid) => grab("script/config", eid).then((c) => [eid, c]))),
     ]);
@@ -120,7 +136,7 @@ class HomeNodesPanel extends HTMLElement {
     return buildGraph({
       states, entities, devices, areas, labels, categories: { automation: autoCats, script: scriptCats },
       configs: autos.configs, scriptConfigs: scripts.configs, blueprints: { ...autos.blueprints, ...scripts.blueprints },
-      grouping: this._opts.grouping,
+      grouping: this._opts.grouping, hidden,
     });
   }
   // keepView keeps the current pan and zoom; refit fits the map afresh.
@@ -130,6 +146,8 @@ class HomeNodesPanel extends HTMLElement {
       Object.assign(this._opts, saved.opts);
       this._posBy = saved.posBy;
       this._collapsedBy = saved.collapsedBy;
+    } else if (!keepView) {
+      this._opts.grouping = this._settings.grouping;
     }
     this._collapsed = new Set(this._collapsedBy[this._opts.grouping] || []);
     const graph = await this._fetchGraph();
@@ -176,7 +194,7 @@ class HomeNodesPanel extends HTMLElement {
     const old = legacy || v.v === 2 || (!v.posBy && v.pos);
     const opts = { ...(v.opts && typeof v.opts === "object" ? v.opts : {}) };
     delete opts.focus;
-    if (!opts.grouping) opts.grouping = old ? "tag" : "area";
+    if (!opts.grouping) opts.grouping = old ? "tag" : this._settings.grouping;
     const object = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
     return {
       opts,
@@ -255,7 +273,7 @@ class HomeNodesPanel extends HTMLElement {
     const key = (role, verdict, text) => [glyph(role, verdict), h("span", {}, text)];
     this._showPop(anchor, [
       this._popItem(tr("Condition status"), tr("Colour each condition by whether it would pass right now"), this._opts.conditions, () => this._setOpt("conditions", !this._opts.conditions)),
-      this._popItem(tr("Activity heat"), tr("Mark how often each automation ran over the last week"), this._opts.heat, () => this._setOpt("heat", !this._opts.heat)),
+      this._popItem(tr("Activity heat"), this._heatNote(), this._opts.heat, () => this._setOpt("heat", !this._opts.heat)),
       h("hr"),
       h("div", { class: "key" }, h("b", {}, tr("Group by"))),
       ...[
@@ -290,6 +308,12 @@ class HomeNodesPanel extends HTMLElement {
       this._popItem(tr("Tidy the layout"), tr("Lay everything out again"), null, () => this._tidy()),
       this._popItem(tr("Reload automations"), null, null, () => this._reload()),
     ]);
+  }
+  _heatNote() {
+    const days = this._settings.heatDays;
+    if (days === 7) return tr("Mark how often each automation ran over the last week");
+    if (days === 1) return tr("Mark how often each automation ran over the last day");
+    return tr("Mark how often each automation ran over the last {days} days", { days });
   }
   _setOpt(k, v) {
     this._opts[k] = v;
@@ -383,7 +407,7 @@ class HomeNodesPanel extends HTMLElement {
       n.agoEl.setAttribute("text-anchor", "end");
       n.heatEl = s("rect", { class: "heat", x: 6, y: n.h - 3.5, height: 2, rx: 1, width: 0 }, g);
     } else {
-      const tog = n.kind === "entity" && TOGGLEABLE.has(n.id.split(".")[0]) && !n.missing;
+      const tog = this._settings.controls && n.kind === "entity" && TOGGLEABLE.has(n.id.split(".")[0]) && !n.missing;
       if (tog) { g.classList.add("tog"); s("circle", { class: "hit", cx: 20, cy: n.h / 2, r: 14 }, g); }
       this._icon(g, nodeIcon(n), 12, (n.h - 16) / 2, 16);
       const time = n.kind === "time";
@@ -1234,14 +1258,15 @@ class HomeNodesPanel extends HTMLElement {
       if (cfg.description) d.append(h("p", { class: "desc" }, cfg.description));
       const off = st?.state === "off", cid = n.cfgId || cfg.id;
       const acts = h("div", { class: "acts" });
+      const controls = this._settings.controls;
       if (n.kind === "automation") {
-        acts.append(btn(tr("Run"), "primary", () => this._call("automation", "trigger", { entity_id: n.id, skip_condition: false }), { live: true, title: tr("Run as if triggered; its conditions still apply") }),
+        if (controls) acts.append(btn(tr("Run"), "primary", () => this._call("automation", "trigger", { entity_id: n.id, skip_condition: false }), { live: true, title: tr("Run as if triggered; its conditions still apply") }),
           btn(tr("Run actions"), "outline", () => this._call("automation", "trigger", { entity_id: n.id, skip_condition: true }), { live: true, title: tr("Run the actions and skip the conditions") }),
           btn(off ? tr("Enable") : tr("Disable"), "outline", () => this._call("automation", off ? "turn_on" : "turn_off", { entity_id: n.id }), { live: true }));
-        if (cid) acts.append(btn(tr("Open editor"), "outline", () => this._navigate(`/config/automation/edit/${cid}`)));
+        if (cid) acts.append(btn(tr("Open editor"), controls ? "outline" : "primary", () => this._navigate(`/config/automation/edit/${cid}`)));
       } else {
-        acts.append(btn(tr("Run"), "primary", () => this._call("script", "turn_on", { entity_id: n.id }), { live: true }),
-          btn(tr("Open editor"), "outline", () => this._navigate(`/config/script/edit/${n.id.slice(7)}`)));
+        if (controls) acts.append(btn(tr("Run"), "primary", () => this._call("script", "turn_on", { entity_id: n.id }), { live: true }));
+        acts.append(btn(tr("Open editor"), controls ? "outline" : "primary", () => this._navigate(`/config/script/edit/${n.id.slice(7)}`)));
       }
       const last = st?.attributes?.last_triggered;
       const definedIn = h("span", { class: "muted" }, "…");
@@ -1272,7 +1297,7 @@ class HomeNodesPanel extends HTMLElement {
     }
     if (n.kind === "entity") {
       const acts = h("div", { class: "acts" });
-      if (TOGGLEABLE.has(n.id.split(".")[0]) && !n.missing) acts.append(btn(st?.state === "on" ? tr("Turn off") : tr("Turn on"), "primary", () => this._toggleEntity(n.id), { live: true }));
+      if (this._settings.controls && TOGGLEABLE.has(n.id.split(".")[0]) && !n.missing) acts.append(btn(st?.state === "on" ? tr("Turn off") : tr("Turn on"), "primary", () => this._toggleEntity(n.id), { live: true }));
       acts.append(btn(tr("More info"), "outline", () => this._moreInfo(n.id)), btn(tr("History"), "outline", () => this._navigate(`/history?entity_id=${n.id}`)));
       d.append(acts, facts([
         [tr("State"), this._stateText(n), n.missing ? "no" : null],
@@ -1457,7 +1482,8 @@ class HomeNodesPanel extends HTMLElement {
 
   async _loadHeat() {
     const ids = [...this._nodes.values()].filter(isOwner).map((n) => n.id);
-    const end = new Date(), start = new Date(end.getTime() - 7 * 86400e3);
+    const days = this._settings.heatDays;
+    const end = new Date(), start = new Date(end.getTime() - days * 86400e3);
     const span = { start_time: start.toISOString(), end_time: end.toISOString(), entity_ids: ids };
     let counts = {}, approx = false;
     try {
@@ -1469,7 +1495,7 @@ class HomeNodesPanel extends HTMLElement {
       const hist = await this._ws({ type: "history/history_during_period", ...span, minimal_response: false, no_attributes: true, significant_changes_only: false });
       for (const [id, rows] of Object.entries(hist || {})) counts[id] = Math.round(Math.max(0, rows.length - 1) / 2);
     }
-    this._heat = { counts, approx, days: 7 };
+    this._heat = { counts, approx, days };
     this._repaintOwners();
   }
 

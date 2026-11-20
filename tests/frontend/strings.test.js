@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addTranslations, setLanguage, tr } from "../custom_components/homenodes/frontend/strings.js";
-import { ago } from "../custom_components/homenodes/frontend/format.js";
+import { addTranslations, setLanguage, tr } from "../../custom_components/homenodes/frontend/strings.js";
+import { ago } from "../../custom_components/homenodes/frontend/format.js";
 
 test("English is the key, with placeholders filled", () => {
   setLanguage("en");

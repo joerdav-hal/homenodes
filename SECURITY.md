@@ -11,8 +11,15 @@ it, and the Home Assistant and HomeNodes versions. You should hear back within a
 
 - **No outside requests.** The panel talks only to Home Assistant's own WebSocket, through the
   connection Home Assistant gives it. It loads no code or data from anywhere else.
-- **Admin only.** The panel is registered for administrators, and every command it sends is
-  one Home Assistant already restricts to administrators.
+- **Admin only.** The panel is registered for administrators. What it reads beyond what any
+  signed-in user can already see (automation and script configurations, traces, blueprints)
+  comes from commands Home Assistant restricts to administrators. If an administrator opens
+  the panel to other users from the sidebar editor, they see automation names and history but
+  not how the automations work.
+- **Read-only unless allowed.** The panel calls no services until **Allow controls** is turned
+  on in the integration's options.
+- **Hidden means unread.** Automations and scripts with a hidden label are skipped before their
+  configuration is requested.
 - **Text stays text.** Entity names, automation aliases and descriptions come from your Home
   Assistant and are inserted as text nodes, never parsed as HTML.
 - **No string evaluation.** No `eval`, `new Function` or string timers.

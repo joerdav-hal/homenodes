@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { instantIn, partsIn } from "../custom_components/homenodes/frontend/time.js";
-import { evalConditions } from "../custom_components/homenodes/frontend/conditions.js";
-import { nextAt } from "../custom_components/homenodes/frontend/schedule.js";
+import { instantIn, partsIn } from "../../custom_components/homenodes/frontend/time.js";
+import { evalConditions } from "../../custom_components/homenodes/frontend/conditions.js";
+import { nextAt } from "../../custom_components/homenodes/frontend/schedule.js";
 
 // 13:00 UTC on Friday 20 November 2026: 18:30 in Kolkata (+05:30), 08:00 in New York (-05:00).
 const moment = Date.UTC(2026, 10, 20, 13, 0, 0);

@@ -38,21 +38,26 @@ Debt carried forward:
   script fields, labels and categories.
 - [ ] Automations an integration created, if any exist in the wild.
 
-## 3. The integration
+## 3. The integration (done)
 
-- [ ] `custom_components/homenodes`: config flow, single instance, `hacs.json` with a minimum
-  Home Assistant version.
-- [ ] Serve the frontend from a versioned path (`/homenodes/<version>/`), so relative imports
-  are cache-busted too, and register an admin-only panel; remove it cleanly on unload.
-- [ ] Options: sidebar title and icon, grouping, controls, condition status, heat window,
-  labels to hide.
-- [ ] Diagnostics with personal details redacted.
-- [ ] Tests with `pytest-homeassistant-custom-component`.
+- [x] `custom_components/homenodes`: config flow, single instance, `hacs.json` requiring Home
+  Assistant 2024.12 (options flows get their entry from it).
+- [x] The frontend served from `/homenodes_files/<version>/`, so every module is cache-busted
+  by a release. Not under `/homenodes/`: the frontend answers every path below a panel's URL
+  with its own index page. An admin-only panel, removed on unload.
+- [x] Options: controls (off by default), default grouping, heat window, labels to hide (never
+  read, not just not drawn). The panel checks them again, and with no config behaves as before:
+  17 views byte-identical.
+- [x] Diagnostics with versions, option values and counts; label ids are counted, not listed.
+- [x] Tests with `pytest-homeassistant-custom-component`, plus a dev shell in `flake.nix`.
+- Dropped: a sidebar title and icon. Home Assistant's own sidebar editing
+  (`frontend/update_panel`) overrides what an integration registers, so they would look broken.
+- Kept per user: condition status, in the View menu, as it was.
 
 ## 4. Safety
 
-- [ ] A read-only option, a confirmation before "Run actions", and toggling kept to an
-  allowlist of domains.
+- [x] A read-only mode: controls are off unless the integration's options allow them.
+- [ ] A confirmation before "Run actions"; toggling kept to an allowlist of domains.
 - [ ] Cap live template subscriptions and drop them while the panel is hidden.
 - [ ] Bounded, cancellable history and logbook queries.
 - [ ] A versioned format for saved layouts that tolerates bad data.
@@ -66,8 +71,8 @@ Debt carried forward:
 
 ## 6. Releases
 
-- [ ] `hassfest` and HACS validation in CI, screenshot tests, a weekly run against Home
-  Assistant beta.
+- [x] `hassfest` and HACS validation in CI (both untried until the repository is on GitHub).
+- [ ] Screenshot tests, a weekly run against Home Assistant beta.
 - [ ] Tagged releases with notes and provenance.
 
 ## 7. Docs and accessibility

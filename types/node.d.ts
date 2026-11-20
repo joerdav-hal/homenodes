@@ -29,13 +29,25 @@ declare module "node:fs" {
   export function statSync(path: string | URL): { isFile(): boolean };
 }
 
+declare module "node:fs/promises" {
+  export function readFile(path: string): Promise<Uint8Array>;
+}
+
+declare module "node:http" {
+  interface Response { writeHead(status: number, headers?: Record<string, string>): Response; end(body?: string | Uint8Array): void }
+  export function createServer(handler: (req: { url?: string }, res: Response) => void): { listen(port: number, host: string, ready: () => void): void };
+}
+
 declare module "node:path" {
   export function join(...parts: string[]): string;
   export function relative(from: string, to: string): string;
+  export function normalize(path: string): string;
+  export function extname(path: string): string;
+  export const sep: string;
 }
 
 declare module "node:url" {
   export function fileURLToPath(url: string | URL): string;
 }
 
-declare const process: { exitCode?: number; argv: string[]; stdout: { write(s: string): void } };
+declare const process: { exitCode?: number; argv: string[]; env: Record<string, string | undefined>; stdout: { write(s: string): void } };

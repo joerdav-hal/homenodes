@@ -45,7 +45,8 @@ Python 3 (for a static server); there is nothing to install.
 npm run dev        # serve the repo, then open http://127.0.0.1:8770/dev/
 npm test           # unit tests, with Node's own test runner
 npm run typecheck  # TypeScript 5.9 over the JSDoc types, through npx
-npm run check      # forbidden APIs and outside URLs
+npm run check      # forbidden APIs, outside URLs, and a stale translation catalog
+npm run strings    # rebuild translations/en.json after changing interface text
 ```
 
 The dev harness runs the panel against [a made-up house](dev/fake-house.js) with a fake

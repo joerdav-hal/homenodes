@@ -1,6 +1,8 @@
 // Blueprint automations and scripts store only "this blueprint, these inputs". Home Assistant's
 // blueprint/substitute turns that into the config that actually runs, which is what we draw.
 
+import { tr } from "./strings.js";
+
 /** @typedef {import("../../../types/ha").Config} Config */
 
 /**
@@ -42,7 +44,7 @@ export async function expandBlueprints(configs, domain, send, cache = new Map())
     } catch (e) {
       cache.delete(key);
       const err = /** @type {{ code?: string, message?: string }} */ (e);
-      blueprints[eid].error = err?.code === "unknown_command" ? "This version of Home Assistant can't expand blueprints" : err?.message || "Couldn't read the blueprint";
+      blueprints[eid].error = err?.code === "unknown_command" ? tr("This version of Home Assistant can't expand blueprints") : err?.message || tr("Couldn't read the blueprint");
     }
   };
   for (let i = 0; i < todo.length; i += AT_ONCE) await Promise.all(todo.slice(i, i + AT_ONCE).map(([eid, cfg]) => expand(eid, cfg)));

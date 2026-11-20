@@ -1,28 +1,41 @@
 // Turning times, states and configs into text.
 
+import { tr } from "./strings.js";
+
 /** @typedef {import("../../../types/ha").HassEntity} HassEntity */
+
+/**
+ * How long ago, without the "ago": "just now", "5m", "3h", "2d" or "never".
+ * @param {string | number | Date | null | undefined} iso
+ * @param {number} [ref] The moment to measure from, epoch milliseconds.
+ */
+export const duration = (iso, ref = Date.now()) => {
+  if (!iso) return tr("never");
+  const s = (ref - new Date(iso).getTime()) / 1000;
+  if (s < 45) return tr("just now");
+  if (s < 3600) return tr("{n}m", { n: Math.round(s / 60) });
+  if (s < 86400) return tr("{n}h", { n: Math.round(s / 3600) });
+  return tr("{n}d", { n: Math.round(s / 86400) });
+};
 
 /**
  * "just now", "5m ago", "3h ago", "2d ago" or "never".
  * @param {string | number | Date | null | undefined} iso
- * @param {number} [ref] The moment to measure from, epoch milliseconds.
+ * @param {number} [ref]
  */
 export const ago = (iso, ref = Date.now()) => {
-  if (!iso) return "never";
-  const s = (ref - new Date(iso).getTime()) / 1000;
-  if (s < 45) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
+  if (!iso) return tr("never");
+  if ((ref - new Date(iso).getTime()) / 1000 < 45) return tr("just now");
+  return tr("{time} ago", { time: duration(iso, ref) });
 };
 
 /** "now", "in 5m", "in 2h 14m" or "in 3d". @param {number} ms */
 export const inFmt = (ms) => {
   const m = Math.round(ms / 60000);
-  if (m < 1) return "now";
-  if (m < 60) return `in ${m}m`;
+  if (m < 1) return tr("now");
+  if (m < 60) return tr("in {n}m", { n: m });
   const hh = Math.floor(m / 60);
-  return hh < 24 ? `in ${hh}h ${m % 60}m` : `in ${Math.round(hh / 24)}d`;
+  return hh < 24 ? tr("in {h}h {m}m", { h: hh, m: m % 60 }) : tr("in {n}d", { n: Math.round(hh / 24) });
 };
 
 /** @typedef {{ language?: string, hour12?: boolean, timeZone?: string }} TimeFormat */
@@ -50,8 +63,8 @@ export const dayTime = (t) => new Date(t).toLocaleString(timeFormat.language ?? 
  * @param {number} [ref]
  */
 export const fmtState = (st, ref) => {
-  if (!st) return "missing";
-  if (st.state === "unavailable") return "unavailable";
+  if (!st) return tr("missing");
+  if (st.state === "unavailable") return tr("unavailable");
   const u = st.attributes?.unit_of_measurement;
   let v = st.state;
   if (/^\d{4}-\d\d-\d\dT/.test(v)) v = ago(v, ref);

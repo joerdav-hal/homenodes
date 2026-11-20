@@ -1,5 +1,7 @@
 // Values shared between the graph, the layout and the panel.
 
+import { tr } from "./strings.js";
+
 /** Where each user's layout is saved with frontend/set_user_data. */
 export const STORE_KEY = "homenodes";
 /** The key used before the project had a name, read once so layouts carry over. */
@@ -17,8 +19,21 @@ export const SIZE = { automation: [236, 56], script: [236, 56], entity: [204, 40
 // Domains whose dot toggles them; nothing that unlocks, opens or heats.
 export const TOGGLEABLE = new Set(["light", "switch", "input_boolean", "fan"]);
 
-/** How a trace's script_execution reads, and the class it is shown in. @type {Record<string, [string, string]>} */
-export const OUTCOME = {
-  finished: ["Ran", "ok"], failed_conditions: ["Blocked", "warn"], error: ["Error", "no"], failed_single: ["Already running", ""],
-  cancelled: ["Cancelled", ""], aborted: ["Stopped", ""], failed_max_runs: ["Too many runs", "no"], running: ["Running", "ok"],
+/**
+ * How a trace's script_execution reads, and the class it is shown in.
+ * @param {string | null | undefined} execution
+ * @returns {[string, string] | null}
+ */
+export const outcome = (execution) => {
+  switch (execution) {
+    case "finished": return [tr("Ran"), "ok"];
+    case "failed_conditions": return [tr("Blocked"), "warn"];
+    case "error": return [tr("Error"), "no"];
+    case "failed_single": return [tr("Already running"), ""];
+    case "cancelled": return [tr("Cancelled"), ""];
+    case "aborted": return [tr("Stopped"), ""];
+    case "failed_max_runs": return [tr("Too many runs"), "no"];
+    case "running": return [tr("Running"), "ok"];
+    default: return null;
+  }
 };

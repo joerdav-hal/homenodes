@@ -20,6 +20,8 @@ jobs:
           node-version: 22
       - name: Forbidden APIs and outside URLs
         run: node scripts/check.mjs
+      - name: Translation catalog is up to date
+        run: node scripts/strings.mjs --check
       - name: Unit tests
         run: node --test tests/
       - name: Type check

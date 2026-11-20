@@ -32,7 +32,8 @@ Debt carried forward:
   profile asks.
 - [x] **"Defined in".** YAML or UI, from whether Home Assistant's editor API knows the
   automation, replacing the Nix-specific guess.
-- [ ] **Strings** into a translation table, English first.
+- [x] **Strings** through `tr()`, gettext style, with the catalog in `translations/en.json`
+  generated and checked in CI. English only so far; output proven byte-identical across 17 views.
 - [x] Fake-house cases: blueprint automations and scripts, a missing blueprint, YAML packages,
   script fields, labels and categories.
 - [ ] Automations an integration created, if any exist in the wild.

@@ -1,6 +1,7 @@
 // Conditions evaluated in the browser from live states, so the map can say what blocks what.
 
-import { ago } from "./format.js";
+import { duration } from "./format.js";
+import { tr } from "./strings.js";
 import { partsIn } from "./time.js";
 import { asList, isTemplate } from "./util.js";
 
@@ -27,6 +28,8 @@ import { asList, isTemplate } from "./util.js";
 const and3 = (rs) => (rs.includes(false) ? false : rs.includes(null) ? null : true);
 /** @param {Tri[]} rs @returns {Tri} */
 const or3 = (rs) => (rs.includes(true) ? true : rs.includes(null) ? null : false);
+/** @param {any[]} items @param {string} word */
+const joinWith = (items, word) => items.join(` ${word} `);
 
 /**
  * A duration in seconds: "01:30:00", "-00:30:00", 90, or { minutes: 1 }. Null for a template.
@@ -88,7 +91,7 @@ export function evalConditions(conds, { states, now = new Date(), tpl = new Map(
       case "not": {
         // What a "not" looked at counts the other way round.
         const outer = rep;
-        rep = (id, ok, why) => outer(id, ok == null ? null : !ok, why && { ...why, wanted: `not ${why.wanted}` });
+        rep = (id, ok, why) => outer(id, ok == null ? null : !ok, why && { ...why, wanted: tr("not {wanted}", { wanted: why.wanted }) });
         const r = or3(asList(c.conditions).map(ev));
         rep = outer;
         return r == null ? null : !r;
@@ -103,10 +106,11 @@ export function evalConditions(conds, { states, now = new Date(), tpl = new Map(
           const v = st && (c.attribute ? st.attributes?.[c.attribute] : st.state);
           /** @type {Tri} */
           let ok = !!st && wanted.some((w) => w === String(v) || (w.includes(".") && states[w]?.state === String(v)));
-          let actual = st ? String(v) : "missing";
+          let actual = st ? String(v) : tr("missing");
           if (ok && need === null) ok = null;
-          else if (ok && need) { ok = (now.getTime() - new Date(st.last_changed).getTime()) / 1000 >= need; if (!ok) actual = `${v} for only ${ago(st.last_changed, now.getTime()).replace(" ago", "")}`; }
-          rep(e, ok, { actual, wanted: `${wanted.join(" or ")}${need ? ` for ${typeof c.for === "string" ? c.for : JSON.stringify(c.for)}` : ""}` });
+          else if (ok && need) { ok = (now.getTime() - new Date(st.last_changed).getTime()) / 1000 >= need; if (!ok) actual = tr("{state} for only {time}", { state: v, time: duration(st.last_changed, now.getTime()) }); }
+          const states_ = joinWith(wanted, tr("or"));
+          rep(e, ok, { actual, wanted: need ? tr("{state} for {duration}", { state: states_, duration: typeof c.for === "string" ? c.for : JSON.stringify(c.for) }) : states_ });
           return ok;
         });
         return c.match === "any" ? or3(rs) : and3(rs);
@@ -122,7 +126,7 @@ export function evalConditions(conds, { states, now = new Date(), tpl = new Map(
           const st = states[e];
           const n = Number(c.attribute ? st?.attributes?.[c.attribute] : st?.state);
           const ok = !!st && !isNaN(n) && (above == null || n > above) && (below == null || n < below);
-          rep(e, ok, { actual: st ? String(c.attribute ? st.attributes?.[c.attribute] : st.state) : "missing", wanted: [above != null ? `above ${above}` : "", below != null ? `below ${below}` : ""].filter(Boolean).join(" and ") });
+          rep(e, ok, { actual: st ? String(c.attribute ? st.attributes?.[c.attribute] : st.state) : tr("missing"), wanted: joinWith([above != null ? tr("above {n}", { n: above }) : "", below != null ? tr("below {n}", { n: below }) : ""].filter(Boolean), tr("and")) });
           return ok;
         });
         return and3(rs);
@@ -137,9 +141,9 @@ export function evalConditions(conds, { states, now = new Date(), tpl = new Map(
         if (c.weekday) ok = ok && asList(c.weekday).includes(["sun", "mon", "tue", "wed", "thu", "fri", "sat"][z.weekday]);
         /** @param {any} x */
         const hm = (x) => (typeof x === "string" && !x.includes(".") ? x.replace(/^(\d\d?:\d\d):00$/, "$1") : x);
-        const span = c.after != null && c.before != null ? `${hm(c.after)}–${hm(c.before)}` : c.after != null ? `after ${hm(c.after)}` : c.before != null ? `before ${hm(c.before)}` : "";
+        const span = c.after != null && c.before != null ? `${hm(c.after)}–${hm(c.before)}` : c.after != null ? tr("after {time}", { time: hm(c.after) }) : c.before != null ? tr("before {time}", { time: hm(c.before) }) : "";
         const days = c.weekday ? asList(c.weekday).join(", ") : "";
-        rep(`time:${span}|${days}`, ok, { text: span ? `outside ${span}${days ? ` on ${days}` : ""}` : `only runs on ${days}` });
+        rep(`time:${span}|${days}`, ok, { text: span ? (days ? tr("outside {span} on {days}", { span, days }) : tr("outside {span}", { span })) : tr("only runs on {days}", { days }) });
         for (const x of [c.after, c.before]) if (typeof x === "string" && x.includes(".")) rep(x, ok);
         return ok;
       }
@@ -150,7 +154,7 @@ export function evalConditions(conds, { states, now = new Date(), tpl = new Map(
         const rs = es.map((e) => {
           const s = states[e]?.state;
           const ok = zs.some((z) => (z === "zone.home" ? s === "home" : s === states[z]?.attributes?.friendly_name));
-          rep(e, ok, { actual: s ?? "missing", wanted: zs.map((z) => (z === "zone.home" ? "home" : states[z]?.attributes?.friendly_name || z)).join(" or ") });
+          rep(e, ok, { actual: s ?? tr("missing"), wanted: joinWith(zs.map((z) => (z === "zone.home" ? tr("home") : states[z]?.attributes?.friendly_name || z)), tr("or")) });
           return ok;
         });
         zs.forEach((z) => rep(z, and3(rs)));
@@ -165,14 +169,14 @@ export function evalConditions(conds, { states, now = new Date(), tpl = new Map(
         const table = { "sunset|": !up && pm, "|sunrise": !up && !pm, "sunrise|sunset": up, "sunset|sunrise": !up, "sunrise|": up || pm, "|sunset": up || !pm };
         const ok = table[k];
         if (ok == null) return null;
-        rep("sun.sun", ok, { actual: sun.state.replace("_", " "), wanted: [c.after && `after ${c.after}`, c.before && `before ${c.before}`].filter(Boolean).join(", ") });
+        rep("sun.sun", ok, { actual: sun.state.replace("_", " "), wanted: [c.after && tr("after {time}", { time: c.after }), c.before && tr("before {time}", { time: c.before })].filter(Boolean).join(", ") });
         return ok;
       }
       case "device": {
         const es = ids(c.entity_id);
         if (!es.length || !["is_on", "is_off"].includes(c.type)) return null;
         const want = c.type === "is_on" ? "on" : "off";
-        return and3(es.map((e) => { const ok = states[e]?.state === want; rep(e, ok, { actual: states[e]?.state ?? "missing", wanted: want }); return ok; }));
+        return and3(es.map((e) => { const ok = states[e]?.state === want; rep(e, ok, { actual: states[e]?.state ?? tr("missing"), wanted: want }); return ok; }));
       }
       default: return null;
     }

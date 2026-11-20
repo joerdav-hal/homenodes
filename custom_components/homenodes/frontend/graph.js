@@ -1,6 +1,7 @@
 // Reading automation and script configs into a graph of nodes and wires.
 
 import { ROLE_RANK } from "./constants.js";
+import { tr } from "./strings.js";
 import { asList, isRegId, isTemplate } from "./util.js";
 
 /** @typedef {import("../../../types/ha").Config} Config */
@@ -147,7 +148,7 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
   /** @param {string} did */
   const deviceNode = (did) => {
     const d = devById.get(did);
-    return node(`device:${did}`, "device", { label: d?.name_by_user || d?.name || "Unknown device", area: d?.area_id ? areaNames.get(d.area_id) : null, missing: !d });
+    return node(`device:${did}`, "device", { label: d?.name_by_user || d?.name || tr("Unknown device"), area: d?.area_id ? areaNames.get(d.area_id) : null, missing: !d });
   };
   // While probing (refsOf), links are collected instead of drawn.
   /** @type {Set<string> | null} */
@@ -236,7 +237,7 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
     /** @param {string} e */
     const toEntity = (e) => {
       if (e === "none") return;
-      if (e === "all") out(node(`all:${domain}`, "virtual", { label: `All ${domain}s` }).id);
+      if (e === "all") out(node(`all:${domain}`, "virtual", { label: tr("All {domain}s", { domain }) }).id);
       else out(entityNode(e).id);
     };
     resolve([t.entity_id, s.entity_id, s.data?.entity_id].flatMap(asList)).forEach(toEntity);
@@ -249,7 +250,7 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
       if (isTemplate(a)) return;
       const es = live.filter((e) => areaIdOf(e) === a && fits(e.entity_id));
       if (es.length) es.forEach((e) => toEntity(e.entity_id));
-      else out(node(`area:${a}`, "virtual", { label: `${areaNames.get(a) || a} (area)` }).id);
+      else out(node(`area:${a}`, "virtual", { label: tr("{area} (area)", { area: areaNames.get(a) || a }) }).id);
     });
     asList(s.data?.device_id).forEach((d) => { if (!isTemplate(d)) out(deviceNode(d).id); });
     if (domain === "script" && !["turn_on", "turn_off", "toggle", "reload"].includes(name)) out(entityNode(svc).id);
@@ -305,7 +306,7 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
         const key = ["hours", "minutes", "seconds"].map((k) => t[k] ?? "").join("/");
         return [node(`pattern:${key}`, "time", { label: /** @type {string} */ (summarize(t)), schedule: { type: "pattern", hours: t.hours, minutes: t.minutes, seconds: t.seconds } })];
       }
-      case "homeassistant": return [node(`ha:${t.event}`, "time", { label: t.event === "start" ? "HA starts" : `HA ${t.event}`, schedule: null })];
+      case "homeassistant": return [node(`ha:${t.event}`, "time", { label: t.event === "start" ? tr("HA starts") : tr("HA {event}", { event: t.event }), schedule: null })];
       default: return [];
     }
   };
@@ -332,7 +333,7 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
   for (const [eid, cfg] of Object.entries(configs)) {
     const n = nodes.get(eid);
     if (!n) continue;
-    if (!cfg || cfg.error) { n.broken = cfg?.error || "No config"; continue; }
+    if (!cfg || cfg.error) { n.broken = cfg?.error || tr("No config"); continue; }
     const triggers = cfg.triggers ?? cfg.trigger;
     triggerInputs(triggers, eid);
     n.dtTriggers = asList(triggers).filter((t) => (t.trigger || t.platform) === "time").flatMap((t) => asList(t.at)).filter((x) => typeof x === "string" && x.startsWith("input_datetime."));
@@ -355,7 +356,7 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
   // scene.create makes these at run time, so they are only absent until it first runs.
   for (const id of runtimeScenes) {
     const n = nodes.get(id);
-    if (n?.missing) { n.missing = false; n.snapshot = true; n.label = `${id.slice(6).replace(/_/g, " ")} (snapshot)`; }
+    if (n?.missing) { n.missing = false; n.snapshot = true; n.label = tr("{name} (snapshot)", { name: id.slice(6).replace(/_/g, " ") }); }
   }
 
   // Zones. Automations and scripts by the chosen grouping; entities by the one zone they
@@ -390,13 +391,13 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
   const ownerZone = (n) => {
     const reg = regByEid.get(n.id);
     switch (grouping) {
-      case "tag": return areaFor(n.tag) || n.tag || (n.kind === "script" ? "Scripts" : "Other");
-      case "label": return (reg?.labels || []).map((l) => labelName.get(l) || l).sort()[0] || "No label";
+      case "tag": return areaFor(n.tag) || n.tag || (n.kind === "script" ? tr("Scripts") : tr("Other"));
+      case "label": return (reg?.labels || []).map((l) => labelName.get(l) || l).sort()[0] || tr("No label");
       case "category": {
         const id = reg?.categories?.[n.kind];
-        return (id && categoryName.get(`${n.kind}:${id}`)) || "No category";
+        return (id && categoryName.get(`${n.kind}:${id}`)) || tr("No category");
       }
-      default: return (reg?.area_id && areaNames.get(reg.area_id)) || areaFor(n.tag) || targetArea(n) || (n.kind === "script" ? "Scripts" : "No area");
+      default: return (reg?.area_id && areaNames.get(reg.area_id)) || areaFor(n.tag) || targetArea(n) || (n.kind === "script" ? tr("Scripts") : tr("No area"));
     }
   };
   for (const n of list) if (n.kind === "automation" || n.kind === "script") n.cluster = ownerZone(n);
@@ -409,7 +410,7 @@ export function buildGraph({ states, configs, scriptConfigs, entities, devices, 
       if (o?.cluster) counts[o.cluster] = (counts[o.cluster] || 0) + 1;
     }
     const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-    n.cluster = ranked.length === 1 ? ranked[0][0] : n.area || ranked[0]?.[0] || "Shared";
+    n.cluster = ranked.length === 1 ? ranked[0][0] : n.area || ranked[0]?.[0] || tr("Shared");
   }
   /** @type {Graph["refsOf"]} */
   const refsOf = (obj, kind) => {
@@ -460,16 +461,18 @@ export function summarize(t) {
     case "time": return asList(t.at).filter((x) => typeof x === "string" && !x.includes(".")).map((x) => x.replace(/^(\d\d:\d\d):00$/, "$1")).join(", ") || null;
     case "time_pattern": return ["hours", "minutes", "seconds"].filter((k) => t[k] != null).map((k) => {
       const v = String(t[k]);
-      return v.startsWith("/") ? `every ${v.slice(1)}${k[0]}` : `${k} = ${v}`;
+      if (!v.startsWith("/")) return tr("{unit} = {value}", { unit: k, value: v });
+      const n = v.slice(1);
+      return k === "hours" ? tr("every {n}h", { n }) : k === "minutes" ? tr("every {n}m", { n }) : tr("every {n}s", { n });
     }).join(" ");
     case "sun": return `${t.event}${t.offset ? ` ${t.offset}` : ""}`;
-    case "homeassistant": return `HA ${t.event}`;
-    case "event": return `event ${t.event_type}`;
-    case "tag": return "NFC tag";
-    case "mqtt": return `mqtt ${t.topic}`;
-    case "webhook": return "webhook";
-    case "conversation": return `voice “${asList(t.command)[0]}”`;
-    case "calendar": return `calendar ${t.event}`;
+    case "homeassistant": return tr("HA {event}", { event: t.event });
+    case "event": return tr("event {type}", { type: t.event_type });
+    case "tag": return tr("NFC tag");
+    case "mqtt": return tr("mqtt {topic}", { topic: t.topic });
+    case "webhook": return tr("webhook");
+    case "conversation": return tr("voice “{command}”", { command: asList(t.command)[0] });
+    case "calendar": return tr("calendar {event}", { event: t.event });
     default: return null;
   }
 }

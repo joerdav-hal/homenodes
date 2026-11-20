@@ -1,5 +1,7 @@
 // Building DOM and SVG without HTML strings: every bit of text is set as text, never parsed.
 
+import { tr } from "./strings.js";
+
 export const NS = "http://www.w3.org/2000/svg";
 
 /**
@@ -86,12 +88,36 @@ export const DOMAIN_ICON = {
   script: "list", automation: "bolt", camera: "camera", notify: "send", button: "button", input_button: "button", sun: "sun", calendar: "calendar",
   remote: "remote", siren: "bell", tag: "tag", image: "camera", event: "bolt",
 };
-/** @type {Record<string, string>} */
-export const DOMAIN_NAME = {
-  light: "Light", switch: "Switch", input_boolean: "Toggle helper", fan: "Fan", binary_sensor: "Sensor", sensor: "Sensor", person: "Person",
-  device_tracker: "Tracker", zone: "Zone", media_player: "Media player", climate: "Thermostat", input_select: "Dropdown helper", select: "Select",
-  input_text: "Text helper", input_number: "Number helper", number: "Number", input_datetime: "Date and time helper", schedule: "Schedule",
-  timer: "Timer", scene: "Scene", camera: "Camera", button: "Button", sun: "Sun", calendar: "Calendar", remote: "Remote", siren: "Siren",
+/** What a domain's entities are called, for the inspector. @param {string} domain @returns {string | null} */
+export const domainName = (domain) => {
+  switch (domain) {
+    case "light": return tr("Light");
+    case "switch": return tr("Switch");
+    case "input_boolean": return tr("Toggle helper");
+    case "fan": return tr("Fan");
+    case "binary_sensor": case "sensor": return tr("Sensor");
+    case "person": return tr("Person");
+    case "device_tracker": return tr("Tracker");
+    case "zone": return tr("Zone");
+    case "media_player": return tr("Media player");
+    case "climate": return tr("Thermostat");
+    case "input_select": return tr("Dropdown helper");
+    case "select": return tr("Select");
+    case "input_text": return tr("Text helper");
+    case "input_number": return tr("Number helper");
+    case "number": return tr("Number");
+    case "input_datetime": return tr("Date and time helper");
+    case "schedule": return tr("Schedule");
+    case "timer": return tr("Timer");
+    case "scene": return tr("Scene");
+    case "camera": return tr("Camera");
+    case "button": return tr("Button");
+    case "sun": return tr("Sun");
+    case "calendar": return tr("Calendar");
+    case "remote": return tr("Remote");
+    case "siren": return tr("Siren");
+    default: return null;
+  }
 };
 
 /** The icon a node is drawn with. @param {{ kind: string, id: string, schedule?: { type: string } | null }} n */

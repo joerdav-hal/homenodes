@@ -10,6 +10,8 @@
 - Conditions and schedules follow Home Assistant's time zone, and times are shown in the
   user's language, 12- or 24-hour clock and chosen time zone.
 - "Defined in" says YAML or UI, asked of Home Assistant's own editor API.
+- All interface text goes through a translation table, with a catalog in
+  `translations/en.json`. English is the only language so far.
 - Moved out of a homelab repository into its own project, as ES modules with JSDoc types,
   tests, a made-up house for development, and CI. Behaviour is unchanged: the old file and
   the new modules render identical output for the same house.

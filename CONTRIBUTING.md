@@ -12,6 +12,9 @@ Thanks for helping. A few rules keep HomeNodes small, safe and easy to review.
 - **Text as text.** Build DOM with `h()` and SVG with `s()` from
   [`dom.js`](custom_components/homenodes/frontend/dom.js). `npm run check` rejects HTML
   parsing, string evaluation and network calls.
+- **Text goes through `tr()`.** Write interface text as `tr("English text", { placeholder })`
+  with a string literal, then run `npm run strings` to update the catalog in
+  `translations/en.json`; CI fails if it is stale.
 - **Pure logic stays pure.** Graph extraction, conditions, schedules, layout and formatting
   must not touch the DOM, so they can be tested in Node.
 - **Fake data only.** Tests and the harness use [`dev/fake-house.js`](dev/fake-house.js).

@@ -1,7 +1,8 @@
 // HomeNodes: every automation and script as a node graph, with live state flowing along the wires.
 // The sidebar panel's custom element. Pure logic lives in the sibling modules.
 
-import { STORE_KEY, LEGACY_STORE_KEY, ACTIVE, ROLE_RANK, SIZE, TOGGLEABLE, OUTCOME } from "./constants.js";
+import { STORE_KEY, LEGACY_STORE_KEY, ACTIVE, ROLE_RANK, SIZE, TOGGLEABLE, outcome } from "./constants.js";
+import { tr, setLanguage } from "./strings.js";
 import { asList, isTemplate, capital } from "./util.js";
 import { buildGraph, resolvePath, isOwner, isLeaf } from "./graph.js";
 import { evalConditions, branchConditions } from "./conditions.js";
@@ -10,7 +11,7 @@ import { layout, wirePath } from "./layout.js";
 import { ago, inFmt, clock, hhmm, dayTime, fmtState, yaml, setTimeFormat } from "./format.js";
 import { expandBlueprints, blueprintName } from "./blueprints.js";
 import { instantIn, partsIn } from "./time.js";
-import { h, s, ICONS, DOMAIN_NAME, nodeIcon, icon, glyph } from "./dom.js";
+import { h, s, ICONS, domainName, nodeIcon, icon, glyph } from "./dom.js";
 import { CSS } from "./styles.js";
 
 /** @typedef {import("./graph.js").GraphNode} GraphNode */
@@ -82,7 +83,7 @@ class HomeNodesPanel extends HTMLElement {
     } catch (e) {
       console.error("automap:", e);
       this._loading.hidden = false;
-      this._loading.textContent = `Couldn't read automations from Home Assistant: ${e.message || e.code || e}`;
+      this._loading.textContent = tr("Couldn't read automations from Home Assistant: {error}", { error: e.message || e.code || e });
       this._started = false;
     }
   }
@@ -152,7 +153,7 @@ class HomeNodesPanel extends HTMLElement {
     this._loading.hidden = true;
     const c = { automation: 0, script: 0, other: 0 };
     for (const n of graph.nodes) c[n.kind in c ? n.kind : "other"]++;
-    this._count.textContent = `${c.automation} automations, ${c.script} scripts`;
+    this._count.textContent = tr("{automations} automations, {scripts} scripts", { automations: c.automation, scripts: c.script });
     if (refit) this._fit();
     else if (keepView) this._applyView();
     // A view saved at the minimum zoom came from a panel with no size; fit afresh instead.
@@ -191,26 +192,26 @@ class HomeNodesPanel extends HTMLElement {
     root.replaceChildren();
     this._reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     root.append(h("style", {}, CSS));
-    this._menuBtn = h("button", { class: "btn icon menu", title: "Menu", "aria-label": "Menu", onclick: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })) }, icon("menu"));
+    this._menuBtn = h("button", { class: "btn icon menu", title: tr("Menu"), "aria-label": tr("Menu"), onclick: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })) }, icon("menu"));
     this._menuBtn.hidden = !this._narrow;
-    this._search = h("input", { type: "search", placeholder: "Search automations and entities", "aria-label": "Search", oninput: () => { if (this._focusing) this._select(null); this._applyFocus(); }, onkeydown: (e) => {
+    this._search = h("input", { type: "search", placeholder: tr("Search automations and entities"), "aria-label": tr("Search"), oninput: () => { if (this._focusing) this._select(null); this._applyFocus(); }, onkeydown: (e) => {
       if (e.key === "Enter") { const m = this._matches()[0]; if (m) this._selectNode(m.id, true); }
       if (e.key === "Escape") { this._search.value = ""; this._applyFocus(); }
     } });
     this._count = h("span", { class: "count" });
     this._healthBadge = h("span", { class: "pill" });
     const tool = (ic, label, title, onclick, extra) => h("button", { class: "btn", title, onclick }, icon(ic), h("span", { class: "lbl" }, label), extra);
-    this._upBtn = tool("clock", "Up next", "What runs in the next 12 hours", () => this._showUpNext());
+    this._upBtn = tool("clock", tr("Up next"), tr("What runs in the next 12 hours"), () => this._showUpNext());
     this._upBtn.classList.add("wide");
-    this._healthBtn = tool("pulse", "Health", "Broken references, duplicates and fights", () => this._showHealth(), this._healthBadge);
-    this._histBtn = tool("history", "History", "Replay the recent past", () => (this._mode === "history" ? this._exitHistory() : this._enterHistory()));
+    this._healthBtn = tool("pulse", tr("Health"), tr("Broken references, duplicates and fights"), () => this._showHealth(), this._healthBadge);
+    this._histBtn = tool("history", tr("History"), tr("Replay the recent past"), () => (this._mode === "history" ? this._exitHistory() : this._enterHistory()));
     this._histBtn.classList.add("wide");
-    this._viewBtn = tool("eye", "View", "What the map shows", (e) => this._showViewMenu(e.currentTarget));
+    this._viewBtn = tool("eye", tr("View"), tr("What the map shows"), (e) => this._showViewMenu(e.currentTarget));
     root.append(h("div", { class: "bar" },
       this._menuBtn, h("h1", {}, "HomeNodes"), this._count, h("span", { class: "grow" }),
       h("label", { class: "search" }, icon("search"), this._search),
       this._upBtn, this._healthBtn, this._histBtn, h("span", { class: "sep" }), this._viewBtn,
-      h("button", { class: "btn icon", title: "More", "aria-label": "More", onclick: (e) => this._showMoreMenu(e.currentTarget) }, icon("more"))));
+      h("button", { class: "btn icon", title: tr("More"), "aria-label": tr("More"), onclick: (e) => this._showMoreMenu(e.currentTarget) }, icon("more"))));
 
     this._svg = s("svg", { class: "map" });
     const defs = s("defs", {}, this._svg);
@@ -226,9 +227,9 @@ class HomeNodesPanel extends HTMLElement {
     this._wireLayer = s("g", {}, this._vp);
     this._sparkLayer = s("g", {}, this._vp);
     this._nodeLayer = s("g", {}, this._vp);
-    this._drawer = h("aside", { class: "drawer", hidden: true, "aria-label": "Details" });
+    this._drawer = h("aside", { class: "drawer", hidden: true, "aria-label": tr("Details") });
     this._feed = h("div", { class: "activity empty", "aria-live": "polite" });
-    this._loading = h("div", { class: "loading" }, "Reading automations…");
+    this._loading = h("div", { class: "loading" }, tr("Reading automations…"));
     this._pop = h("div", { class: "pop", hidden: true });
     this._stage = h("div", { class: "stage" }, this._svg, this._feed, this._drawer, this._loading);
     root.append(this._stage, this._pop);
@@ -253,41 +254,41 @@ class HomeNodesPanel extends HTMLElement {
   _showViewMenu(anchor) {
     const key = (role, verdict, text) => [glyph(role, verdict), h("span", {}, text)];
     this._showPop(anchor, [
-      this._popItem("Condition status", "Colour each condition by whether it would pass right now", this._opts.conditions, () => this._setOpt("conditions", !this._opts.conditions)),
-      this._popItem("Activity heat", "Mark how often each automation ran over the last week", this._opts.heat, () => this._setOpt("heat", !this._opts.heat)),
+      this._popItem(tr("Condition status"), tr("Colour each condition by whether it would pass right now"), this._opts.conditions, () => this._setOpt("conditions", !this._opts.conditions)),
+      this._popItem(tr("Activity heat"), tr("Mark how often each automation ran over the last week"), this._opts.heat, () => this._setOpt("heat", !this._opts.heat)),
       h("hr"),
-      h("div", { class: "key" }, h("b", {}, "Group by")),
+      h("div", { class: "key" }, h("b", {}, tr("Group by"))),
       ...[
-        ["area", "Area", "The automation's area, or where the things it controls are"],
-        ["label", "Label", "Its first label"],
-        ["category", "Category", "Its category"],
-        ["tag", "Name tag", "A [Tag] at the start of its name"],
+        ["area", tr("Area"), tr("The automation's area, or where the things it controls are")],
+        ["label", tr("Label"), tr("Its first label")],
+        ["category", tr("Category"), tr("Its category")],
+        ["tag", tr("Name tag"), tr("A [Tag] at the start of its name")],
       ].map(([g, label, note]) => this._popItem(label, note, this._opts.grouping === g, () => this._setGrouping(g))),
       h("hr"),
-      h("div", { class: "key" }, h("b", {}, "Key"),
-        key("trigger", null, "Trigger, what starts it"),
-        key("condition", null, "Condition, what it checks"),
-        key("condition", true, "A condition that passes now"),
-        key("condition", false, "A condition that blocks now"),
-        key("action", null, "Action, what it changes"),
-        key("live", null, "Current from something that is on")),
+      h("div", { class: "key" }, h("b", {}, tr("Key")),
+        key("trigger", null, tr("Trigger, what starts it")),
+        key("condition", null, tr("Condition, what it checks")),
+        key("condition", true, tr("A condition that passes now")),
+        key("condition", false, tr("A condition that blocks now")),
+        key("action", null, tr("Action, what it changes")),
+        key("live", null, tr("Current from something that is on"))),
     ]);
   }
   _showMoreMenu(anchor) {
     const clusters = [...new Set([...this._nodes.values()].map((n) => n.cluster))];
     // On phones, Up next and History live here to leave the toolbar to search.
     const narrow = matchMedia("(max-width: 560px)").matches ? [
-      this._popItem("Up next", "What runs in the next 12 hours", null, () => this._showUpNext()),
-      this._popItem(this._mode === "history" ? "Back to live" : "History", "Replay the recent past", null, () => (this._mode === "history" ? this._exitHistory() : this._enterHistory())),
+      this._popItem(tr("Up next"), tr("What runs in the next 12 hours"), null, () => this._showUpNext()),
+      this._popItem(this._mode === "history" ? tr("Back to live") : tr("History"), tr("Replay the recent past"), null, () => (this._mode === "history" ? this._exitHistory() : this._enterHistory())),
       h("hr"),
     ] : [];
     this._showPop(anchor, [
       ...narrow,
-      this._popItem("Fit to screen", "Or press F", null, () => this._fit()),
-      this._popItem("Collapse every area", null, null, () => { this._collapsed = new Set(clusters); this._applyCollapse(); }),
-      this._popItem("Expand every area", null, null, () => { this._collapsed.clear(); this._applyCollapse(); }),
-      this._popItem("Tidy the layout", "Lay everything out again", null, () => this._tidy()),
-      this._popItem("Reload automations", null, null, () => this._reload()),
+      this._popItem(tr("Fit to screen"), tr("Or press F"), null, () => this._fit()),
+      this._popItem(tr("Collapse every area"), null, null, () => { this._collapsed = new Set(clusters); this._applyCollapse(); }),
+      this._popItem(tr("Expand every area"), null, null, () => { this._collapsed.clear(); this._applyCollapse(); }),
+      this._popItem(tr("Tidy the layout"), tr("Lay everything out again"), null, () => this._tidy()),
+      this._popItem(tr("Reload automations"), null, null, () => this._reload()),
     ]);
   }
   _setOpt(k, v) {
@@ -304,6 +305,7 @@ class HomeNodesPanel extends HTMLElement {
     if (key === this._localeKey) return;
     this._localeKey = key;
     this._tz = hass?.config?.time_zone || undefined;
+    setLanguage(loc.language || hass?.language);
     setTimeFormat({
       language: loc.time_format === "system" ? undefined : loc.language || hass?.language,
       hour12: loc.time_format === "am_pm" ? true : loc.time_format === "24" ? false : undefined,
@@ -333,7 +335,7 @@ class HomeNodesPanel extends HTMLElement {
       z.rect = s("rect", { class: "plate", rx: 14 }, z);
       const t = s("g", { class: "cl" }, z);
       t.dataset.cluster = c;
-      s("title", {}, t).textContent = "Collapse this area";
+      s("title", {}, t).textContent = tr("Collapse this area");
       z.hit = s("rect", { class: "zhit" }, t);
       z.chev = this._icon(t, "chevron", 0, 0, 16);
       z.title = s("text", { class: "zt" }, t);
@@ -386,7 +388,7 @@ class HomeNodesPanel extends HTMLElement {
       this._icon(g, nodeIcon(n), 12, (n.h - 16) / 2, 16);
       const time = n.kind === "time";
       this._text(g, "t1", 36, 17.5, n.label, n.w - 46, time ? 13 : 12.5, time ? 600 : 500);
-      const sub = { service: "Service call", device: "Device", virtual: "Group" }[n.kind] || (time && !n.schedule ? "On startup" : "");
+      const sub = { service: tr("Service call"), device: tr("Device"), virtual: tr("Group") }[n.kind] || (time && !n.schedule ? tr("On startup") : "");
       n.stateEl = this._text(g, "t2 state", 36, 31, sub, n.w - 46, 11);
       if (time) n.subEl = n.stateEl;
     }
@@ -406,7 +408,7 @@ class HomeNodesPanel extends HTMLElement {
       const el = s("g", { class: "node group" }, this._nodeLayer);
       el.dataset.id = g.id;
       g.el = el;
-      s("title", {}, el).textContent = "Double-click to expand";
+      s("title", {}, el).textContent = tr("Double-click to expand");
       s("rect", { class: "body", width: w, height: hh, rx: 10 }, el);
       this._icon(el, "layers", 14, 13, 18);
       this._text(el, "t1", 42, 28, c, w - 56, 15, 600);
@@ -486,26 +488,26 @@ class HomeNodesPanel extends HTMLElement {
       if (heat) {
         const per = (heat[n.id] || 0) / this._heat.days;
         const k = Math.min(1, Math.log10(1 + per) / Math.log10(301));
-        this._setText(n.agoEl, `${this._heat.approx ? "≈" : ""}${per >= 10 ? Math.round(per) : Math.round(per * 10) / 10} a day`);
+        this._setText(n.agoEl, tr("{n} a day", { n: `${this._heat.approx ? "≈" : ""}${per >= 10 ? Math.round(per) : Math.round(per * 10) / 10}` }));
         n.heatEl.setAttribute("width", Math.max(heat[n.id] ? 4 : 0, (n.w - 12) * k));
         g.classList.toggle("cold", !heat[n.id]);
       } else {
-        this._setText(n.agoEl, off ? "Off" : last ? ago(last, ref) : "Never run");
+        this._setText(n.agoEl, off ? tr("Off") : last ? ago(last, ref) : tr("Never run"));
         n.heatEl.setAttribute("width", 0);
         g.classList.remove("cold");
       }
       const blocked = n.kind === "automation" && this._opts.conditions && n.blocked?.length && !off;
       g.classList.toggle("blocked", !!blocked);
-      this._setText(n.sumEl, n.broken ? "Can't read its config"
-        : n.blueprint?.error ? "Can't read its blueprint"
-        : blocked ? `Blocked: ${n.blocked[0]}${n.blocked.length > 1 ? `, +${n.blocked.length - 1}` : ""}`
-        : n.kind === "script" ? (st?.state === "on" ? "Running" : "Idle")
+      this._setText(n.sumEl, n.broken ? tr("Can't read its config")
+        : n.blueprint?.error ? tr("Can't read its blueprint")
+        : blocked ? tr("Blocked: {reason}", { reason: `${n.blocked[0]}${n.blocked.length > 1 ? `, +${n.blocked.length - 1}` : ""}` })
+        : n.kind === "script" ? (st?.state === "on" ? tr("Running") : tr("Idle"))
         : capital(n.summary || n.config?.mode || ""));
     } else if (n.kind === "entity") {
       const active = !!st && ACTIVE.has(st.state);
       g.classList.toggle("active", active);
       g.classList.toggle("unavail", (!st && !n.snapshot) || st?.state === "unavailable");
-      this._setText(n.stateEl, n.missing ? "Doesn't exist" : !st && n.snapshot ? "Made when it runs" : capital(fmtState(st, ref)));
+      this._setText(n.stateEl, n.missing ? tr("Doesn't exist") : !st && n.snapshot ? tr("Made when it runs") : capital(fmtState(st, ref)));
       for (const e of n.wires) if (e.a === n) e.el?.classList.toggle("live", active && this._states()[e.dst]?.state !== "off");
     } else if (n.kind === "time" && n.schedule) {
       const next = this._mode === "live" ? nextAt(n.schedule, new Date(), this._hass.states, this._tz) : null;
@@ -520,7 +522,7 @@ class HomeNodesPanel extends HTMLElement {
       if (isOwner(m)) { autos++; const l = st?.attributes?.last_triggered; if (l && ref - new Date(l).getTime() < 3600e3) ran++; }
       else if (st && ACTIVE.has(st.state)) on++;
     }
-    this._setText(g.subEl, `${autos} automations${on ? `, ${on} on` : ""}${ran ? `, ${ran} ran this hour` : ""}`);
+    this._setText(g.subEl, [tr("{n} automations", { n: autos }), on ? tr("{n} on", { n: on }) : null, ran ? tr("{n} ran this hour", { n: ran }) : null].filter(Boolean).join(", "));
     g.el.classList.toggle("active", on > 0);
   }
   _tickClock() {
@@ -578,7 +580,7 @@ class HomeNodesPanel extends HTMLElement {
       if (live) this._watchTemplates([top, ...branchConditions(cfg.actions ?? cfg.action)], skipTpl);
       n.condRes = res;
       const why = [...new Set([...fails].map(([id, w]) => this._reason(id, w)))];
-      n.blocked = verdict === false ? (why.length ? why : ["its conditions"]) : null;
+      n.blocked = verdict === false ? (why.length ? why : [tr("its conditions")]) : null;
     }
     this._applyCondClasses();
     this._repaintOwners();
@@ -589,8 +591,8 @@ class HomeNodesPanel extends HTMLElement {
     if (why?.text) return why.text;
     const name = this._nodes.get(id)?.label || id;
     if (!why) return name;
-    if (why.template) return `${name} (a template on it is false)`;
-    return `${name} is ${why.actual}, needs ${why.wanted}`;
+    if (why.template) return tr("{name} (a template on it is false)", { name });
+    return tr("{name} is {actual}, needs {wanted}", { name, actual: why.actual, wanted: why.wanted });
   }
 
   _applyCondClasses() {
@@ -763,8 +765,8 @@ class HomeNodesPanel extends HTMLElement {
   }
 
   _feedAdd(n, source, when = Date.now()) {
-    if (!this._feed.firstChild) this._feed.append(h("h4", {}, "Activity"));
-    const row = h("div", { class: "row", tabindex: "0", title: "Show this run", onclick: () => this._selectNode(n.id, true, when) },
+    if (!this._feed.firstChild) this._feed.append(h("h4", {}, tr("Activity")));
+    const row = h("div", { class: "row", tabindex: "0", title: tr("Show this run"), onclick: () => this._selectNode(n.id, true, when) },
       h("time", {}, clock(when)), h("b", {}, n.label), h("small", {}, this._cause(source)));
     this._feed.firstChild.after(row);
     this._feed.classList.remove("empty");
@@ -938,7 +940,7 @@ class HomeNodesPanel extends HTMLElement {
     this._save();
   }
   async _tidy() {
-    if (!confirm("Lay out the whole map again? Positions you dragged will be lost.")) return;
+    if (!confirm(tr("Lay out the whole map again? Positions you dragged will be lost."))) return;
     this._select(null, false, null, true);
     const nodes = [...this._nodes.values()];
     layout(nodes, this._edges, new Map());
@@ -1157,31 +1159,31 @@ class HomeNodesPanel extends HTMLElement {
   _cause(source) {
     const s = source || "";
     const id = s.match(/[a-z_]+\.[a-z0-9_]+/)?.[0];
-    if (id) return `${this._nodes.get(id)?.label || id} changed`;
-    if (/^time pattern/.test(s)) return "Repeating schedule";
-    if (/^time/.test(s)) return "Scheduled time";
-    if (/^sun/.test(s)) return "Sunrise or sunset";
-    if (/start/i.test(s)) return "Home Assistant started";
-    if (/^event /.test(s)) return `Event ${s.slice(6)}`;
-    if (!s || /manual|action|service/.test(s)) return "Run by hand";
+    if (id) return tr("{name} changed", { name: this._nodes.get(id)?.label || id });
+    if (/^time pattern/.test(s)) return tr("Repeating schedule");
+    if (/^time/.test(s)) return tr("Scheduled time");
+    if (/^sun/.test(s)) return tr("Sunrise or sunset");
+    if (/start/i.test(s)) return tr("Home Assistant started");
+    if (/^event /.test(s)) return tr("Event {type}", { type: s.slice(6) });
+    if (!s || /manual|action|service/.test(s)) return tr("Run by hand");
     return capital(s);
   }
 
   _clearFeed() { this._feed.replaceChildren(); this._feed.classList.add("empty"); }
 
-  _closeBtn() { return h("button", { class: "btn icon close", title: "Close", "aria-label": "Close", onclick: () => this._select(null) }, icon("close")); }
+  _closeBtn() { return h("button", { class: "btn icon close", title: tr("Close"), "aria-label": tr("Close"), onclick: () => this._select(null) }, icon("close")); }
 
   _kind(n) {
-    const what = { automation: "Automation", script: "Script", time: "Schedule", service: "Service call", device: "Device", virtual: "Group" }[n.kind]
-      || DOMAIN_NAME[n.id.split(".")[0]] || capital(n.id.split(".")[0].replace(/_/g, " "));
+    const what = { automation: tr("Automation"), script: tr("Script"), time: tr("Schedule"), service: tr("Service call"), device: tr("Device"), virtual: tr("Group") }[n.kind]
+      || domainName(n.id.split(".")[0]) || capital(n.id.split(".")[0].replace(/_/g, " "));
     const place = isOwner(n) ? n.cluster : n.area;
-    if (!place || ["Other", "Scripts", "Shared"].includes(place)) return what;
-    return this._areaNames?.has(place) ? `${what} in ${place}` : `${place} ${what.toLowerCase()}`;
+    if (!place || [tr("Other"), tr("Scripts"), tr("Shared")].includes(place)) return what;
+    return this._areaNames?.has(place) ? tr("{what} in {place}", { what, place }) : tr("{place} {what}", { place, what: what.toLowerCase() });
   }
 
   _section(title, items) { return [h("h3", {}, title, h("span", { class: "n" }, String(items.length))), h("ul", {}, items)]; }
 
-  _setPlayLabel(playing) { this._histPlayBtn?.replaceChildren(icon(playing ? "pause" : "play", 16), h("span", {}, playing ? "Pause" : "Play")); }
+  _setPlayLabel(playing) { this._histPlayBtn?.replaceChildren(icon(playing ? "pause" : "play", 16), h("span", {}, playing ? tr("Pause") : tr("Play"))); }
 
   _navigate(path) {
     history.pushState(null, "", path);
@@ -1210,9 +1212,9 @@ class HomeNodesPanel extends HTMLElement {
   }
   _stateText(o) {
     const st = this._states()[o.id];
-    if (o.kind === "entity") return o.missing ? "Doesn't exist" : !st && o.snapshot ? "Snapshot" : capital(fmtState(st, this._ref()));
-    if (o.kind === "automation") return st?.state === "off" ? "Off" : capital(ago(st?.attributes?.last_triggered, this._ref()));
-    if (o.kind === "script") return st?.state === "on" ? "Running" : "Idle";
+    if (o.kind === "entity") return o.missing ? tr("Doesn't exist") : !st && o.snapshot ? tr("Snapshot") : capital(fmtState(st, this._ref()));
+    if (o.kind === "automation") return st?.state === "off" ? tr("Off") : capital(ago(st?.attributes?.last_triggered, this._ref()));
+    if (o.kind === "script") return st?.state === "on" ? tr("Running") : tr("Idle");
     if (o.kind === "time") return o.subEl?.textContent || "";
     return "";
   }
@@ -1233,59 +1235,59 @@ class HomeNodesPanel extends HTMLElement {
       const off = st?.state === "off", cid = n.cfgId || cfg.id;
       const acts = h("div", { class: "acts" });
       if (n.kind === "automation") {
-        acts.append(btn("Run", "primary", () => this._call("automation", "trigger", { entity_id: n.id, skip_condition: false }), { live: true, title: "Run as if triggered; its conditions still apply" }),
-          btn("Run actions", "outline", () => this._call("automation", "trigger", { entity_id: n.id, skip_condition: true }), { live: true, title: "Run the actions and skip the conditions" }),
-          btn(off ? "Enable" : "Disable", "outline", () => this._call("automation", off ? "turn_on" : "turn_off", { entity_id: n.id }), { live: true }));
-        if (cid) acts.append(btn("Open editor", "outline", () => this._navigate(`/config/automation/edit/${cid}`)));
+        acts.append(btn(tr("Run"), "primary", () => this._call("automation", "trigger", { entity_id: n.id, skip_condition: false }), { live: true, title: tr("Run as if triggered; its conditions still apply") }),
+          btn(tr("Run actions"), "outline", () => this._call("automation", "trigger", { entity_id: n.id, skip_condition: true }), { live: true, title: tr("Run the actions and skip the conditions") }),
+          btn(off ? tr("Enable") : tr("Disable"), "outline", () => this._call("automation", off ? "turn_on" : "turn_off", { entity_id: n.id }), { live: true }));
+        if (cid) acts.append(btn(tr("Open editor"), "outline", () => this._navigate(`/config/automation/edit/${cid}`)));
       } else {
-        acts.append(btn("Run", "primary", () => this._call("script", "turn_on", { entity_id: n.id }), { live: true }),
-          btn("Open editor", "outline", () => this._navigate(`/config/script/edit/${n.id.slice(7)}`)));
+        acts.append(btn(tr("Run"), "primary", () => this._call("script", "turn_on", { entity_id: n.id }), { live: true }),
+          btn(tr("Open editor"), "outline", () => this._navigate(`/config/script/edit/${n.id.slice(7)}`)));
       }
       const last = st?.attributes?.last_triggered;
       const definedIn = h("span", { class: "muted" }, "…");
       this._definedIn(n).then((where) => { definedIn.textContent = where; definedIn.className = ""; });
       d.append(acts, facts([
-        ["Status", n.kind === "script" ? (st?.state === "on" ? "Running" : "Idle") : st?.state === "unavailable" ? "Unavailable" : off ? "Disabled" : "Enabled"],
-        ["Last ran", last ? `${capital(ago(last, this._ref()))}, at ${hhmm(last)}` : "Never"],
-        n.summary ? ["Starts on", capital(n.summary)] : null,
-        ["Mode", capital(cfg.mode || "single")],
-        ["Defined in", definedIn],
-        n.blueprint ? ["Blueprint", capital(blueprintName(n.blueprint.path)), n.blueprint.error ? "no" : null] : null,
-        n.blueprint?.error ? ["Problem", n.blueprint.error, "no"] : null,
-        n.blocked?.length && this._opts.conditions && !off ? ["Blocked now", n.blocked.join("; "), "no"] : null,
-        n.broken ? ["Problem", `Can't read its config: ${n.broken}`, "no"] : null,
+        [tr("Status"), n.kind === "script" ? (st?.state === "on" ? tr("Running") : tr("Idle")) : st?.state === "unavailable" ? tr("Unavailable") : off ? tr("Disabled") : tr("Enabled")],
+        [tr("Last ran"), last ? tr("{ago}, at {time}", { ago: capital(ago(last, this._ref())), time: hhmm(last) }) : tr("Never")],
+        n.summary ? [tr("Starts on"), capital(n.summary)] : null,
+        [tr("Mode"), capital(cfg.mode || "single")],
+        [tr("Defined in"), definedIn],
+        n.blueprint ? [tr("Blueprint"), capital(blueprintName(n.blueprint.path)), n.blueprint.error ? "no" : null] : null,
+        n.blueprint?.error ? [tr("Problem"), n.blueprint.error, "no"] : null,
+        n.blocked?.length && this._opts.conditions && !off ? [tr("Blocked now"), n.blocked.join("; "), "no"] : null,
+        n.broken ? [tr("Problem"), tr("Can't read its config: {error}", { error: n.broken }), "no"] : null,
       ]));
-      const runs = h("ul", {}, h("li", { class: "static" }, "Loading…"));
-      d.append(h("h3", {}, "Recent runs"), runs);
+      const runs = h("ul", {}, h("li", { class: "static" }, tr("Loading…")));
+      d.append(h("h3", {}, tr("Recent runs")), runs);
       this._loadRuns(n, runs, runAt);
-      if (ins.length) d.append(...this._section("Listens to", order(ins).map((e) => {
+      if (ins.length) d.append(...this._section(tr("Listens to"), order(ins).map((e) => {
         const r = e.role === "condition" && this._opts.conditions ? n.condRes?.get(e.a.id) : undefined;
-        return this._row(e.a, e.role, h("span", {}, this._stateText(e.a), r != null ? h("span", { class: r ? "ok" : "no" }, r ? ", passes" : ", blocks") : null), r);
+        return this._row(e.a, e.role, h("span", {}, this._stateText(e.a), r != null ? h("span", { class: r ? "ok" : "no" }, r ? tr(", passes") : tr(", blocks")) : null), r);
       })));
-      if (outs.length) d.append(...this._section("Acts on", order(outs).map((e) => this._row(e.b, e.role, this._stateText(e.b)))));
+      if (outs.length) d.append(...this._section(tr("Acts on"), order(outs).map((e) => this._row(e.b, e.role, this._stateText(e.b)))));
       const written = this._written?.[n.id] || n.config;
-      if (written) d.append(h("details", {}, h("summary", {}, icon("chevron", 14), "Configuration"), h("pre", {}, yaml(written))));
-      if (n.blueprint && !n.blueprint.error && n.config) d.append(h("details", {}, h("summary", {}, icon("chevron", 14), "Expanded from the blueprint"), h("pre", {}, yaml(n.config))));
+      if (written) d.append(h("details", {}, h("summary", {}, icon("chevron", 14), tr("Configuration")), h("pre", {}, yaml(written))));
+      if (n.blueprint && !n.blueprint.error && n.config) d.append(h("details", {}, h("summary", {}, icon("chevron", 14), tr("Expanded from the blueprint")), h("pre", {}, yaml(n.config))));
       return;
     }
     if (n.kind === "entity") {
       const acts = h("div", { class: "acts" });
-      if (TOGGLEABLE.has(n.id.split(".")[0]) && !n.missing) acts.append(btn(st?.state === "on" ? "Turn off" : "Turn on", "primary", () => this._toggleEntity(n.id), { live: true }));
-      acts.append(btn("More info", "outline", () => this._moreInfo(n.id)), btn("History", "outline", () => this._navigate(`/history?entity_id=${n.id}`)));
+      if (TOGGLEABLE.has(n.id.split(".")[0]) && !n.missing) acts.append(btn(st?.state === "on" ? tr("Turn off") : tr("Turn on"), "primary", () => this._toggleEntity(n.id), { live: true }));
+      acts.append(btn(tr("More info"), "outline", () => this._moreInfo(n.id)), btn(tr("History"), "outline", () => this._navigate(`/history?entity_id=${n.id}`)));
       d.append(acts, facts([
-        ["State", this._stateText(n), n.missing ? "no" : null],
-        st ? ["Changed", capital(ago(st.last_changed, this._ref()))] : null,
-        n.area ? ["Area", n.area] : null,
+        [tr("State"), this._stateText(n), n.missing ? "no" : null],
+        st ? [tr("Changed"), capital(ago(st.last_changed, this._ref()))] : null,
+        n.area ? [tr("Area"), n.area] : null,
       ]));
-      if (n.missing) d.append(h("p", { class: "note no" }, "This entity doesn't exist, so the automations that use it are broken."));
+      if (n.missing) d.append(h("p", { class: "note no" }, tr("This entity doesn't exist, so the automations that use it are broken.")));
     } else if (n.kind === "time" && n.schedule) {
-      d.append(facts([["Next", this._stateText(n)]]));
+      d.append(facts([[tr("Next"), this._stateText(n)]]));
     }
-    if (outs.length) d.append(...this._section("Feeds", order(outs).map((e) => {
+    if (outs.length) d.append(...this._section(tr("Feeds"), order(outs).map((e) => {
       const r = e.role === "condition" && this._opts.conditions ? e.b.condRes?.get(n.id) : undefined;
-      return this._row(e.b, e.role, r != null ? h("span", { class: r ? "ok" : "no" }, r ? "Lets it run" : "Blocks it") : this._stateText(e.b), r);
+      return this._row(e.b, e.role, r != null ? h("span", { class: r ? "ok" : "no" }, r ? tr("Lets it run") : tr("Blocks it")) : this._stateText(e.b), r);
     })));
-    if (ins.length) d.append(...this._section("Changed by", order(ins).map((e) => this._row(e.a, e.role, this._stateText(e.a)))));
+    if (ins.length) d.append(...this._section(tr("Changed by"), order(ins).map((e) => this._row(e.a, e.role, this._stateText(e.a)))));
   }
   _condMark(owner, e) {
     if (e.role !== "condition" || !this._opts.conditions) return null;
@@ -1294,12 +1296,12 @@ class HomeNodesPanel extends HTMLElement {
   }
 
   _showGroup(d, g) {
-    d.append(h("div", { class: "kicker" }, icon("layers", 16), "Collapsed area"), h("h2", {}, g.label));
-    d.append(h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: () => this._toggleCluster(g.cluster) }, "Expand")));
+    d.append(h("div", { class: "kicker" }, icon("layers", 16), tr("Collapsed area")), h("h2", {}, g.label));
+    d.append(h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: () => this._toggleCluster(g.cluster) }, tr("Expand"))));
     const autos = g.members.filter(isOwner);
-    d.append(...this._section("Automations", autos.map((m) => this._row(m, null, this._stateText(m)))));
+    d.append(...this._section(tr("Automations"), autos.map((m) => this._row(m, null, this._stateText(m)))));
     const on = g.members.filter((m) => m.kind === "entity" && ACTIVE.has(this._states()[m.id]?.state));
-    if (on.length) d.append(...this._section("On now", on.map((m) => this._row(m, null, this._stateText(m)))));
+    if (on.length) d.append(...this._section(tr("On now"), on.map((m) => this._row(m, null, this._stateText(m)))));
   }
   // ------------------------------------------------------------ trace replay
 
@@ -1311,10 +1313,10 @@ class HomeNodesPanel extends HTMLElement {
     try { if (key.item_id) list = await this._ws({ type: "trace/list", ...key }); } catch (_) { /* no traces */ }
     if (!ul.isConnected) return;
     list.sort((a, b) => Date.parse(b.timestamp.start) - Date.parse(a.timestamp.start));
-    if (!list.length) { ul.replaceChildren(h("li", { class: "static" }, "No stored runs yet. Home Assistant keeps the last five.")); return; }
+    if (!list.length) { ul.replaceChildren(h("li", { class: "static" }, tr("No stored runs yet. Home Assistant keeps the last five."))); return; }
     ul.replaceChildren(...list.map((t) => {
-      const [txt, cls] = OUTCOME[t.script_execution] || [capital(t.state), ""];
-      const li = h("li", { tabindex: "0", onclick: () => this._replay(n, t, li), title: "Replay this run on the map" },
+      const [txt, cls] = outcome(t.script_execution) || [capital(t.state), ""];
+      const li = h("li", { tabindex: "0", onclick: () => this._replay(n, t, li), title: tr("Replay this run on the map") },
         h("span", { class: "when" }, hhmm(t.timestamp.start)),
         h("span", { class: "name" }, this._cause(t.trigger), h("span", { class: "sub" }, capital(ago(t.timestamp.start)))),
         h("span", { class: `val ${cls}` }, txt));
@@ -1345,16 +1347,16 @@ class HomeNodesPanel extends HTMLElement {
       const ok = st.result?.result;
       const option = sub && !Array.isArray(sub) && sub.sequence && "conditions" in sub;
       const what = kind === "trigger" ? this._cause(t.trigger)
-        : option ? `option ${Number(st.path.split("/").pop()) + 1}${ok == null ? "" : ok ? ": taken" : ": not taken"}`
-        : kind === "condition" ? `${this._condLabel(sub, one)}${st.result?.state != null && st.result?.wanted_state != null ? `; it was ${st.result.state}` : ""}`
+        : option ? (ok == null ? tr("option {n}", { n: Number(st.path.split("/").pop()) + 1 }) : ok ? tr("option {n}: taken", { n: Number(st.path.split("/").pop()) + 1 }) : tr("option {n}: not taken", { n: Number(st.path.split("/").pop()) + 1 }))
+        : kind === "condition" ? `${this._condLabel(sub, one)}${st.result?.state != null && st.result?.wanted_state != null ? tr("; it was {state}", { state: st.result.state }) : ""}`
         : kind === "action" ? sub.action || sub.service || `${sub.domain} ${sub.type}`
-        : sub?.choose ? `choose${st.result?.choice != null ? `: option ${st.result.choice + 1}` : ": default"}` : sub?.if ? "if" : sub?.delay ? "delay" : sub?.wait_template || sub?.wait_for_trigger ? "wait" : sub?.variables ? "variables" : sub?.stop ? "stop" : st.path;
-      const mark = st.error ? h("span", { class: "val no" }, "Error") : kind === "condition" && ok != null ? h("span", { class: `val ${ok ? "ok" : "no"}` }, ok ? "Passed" : "Failed") : h("span", { class: "val" }, `+${((st.ts - steps[0].ts) / 1000).toFixed(2)} s`);
+        : sub?.choose ? (st.result?.choice != null ? tr("choose: option {n}", { n: st.result.choice + 1 }) : tr("choose: default")) : sub?.if ? tr("if") : sub?.delay ? tr("delay") : sub?.wait_template || sub?.wait_for_trigger ? tr("wait") : sub?.variables ? tr("variables") : sub?.stop ? tr("stop") : st.path;
+      const mark = st.error ? h("span", { class: "val no" }, tr("Error")) : kind === "condition" && ok != null ? h("span", { class: `val ${ok ? "ok" : "no"}` }, ok ? tr("Passed") : tr("Failed")) : h("span", { class: "val" }, tr("+{n} s", { n: ((st.ts - steps[0].ts) / 1000).toFixed(2) }));
       const row = h("li", { class: "static", title: st.path }, glyph(kind === "flow" ? "condition" : kind, kind === "condition" ? ok : undefined), h("span", { class: "name" }, capital(what), st.error ? h("span", { class: "sub no" }, st.error) : null), mark);
       list.append(row);
       return { st, sub, one, kind, ok, row };
     });
-    const box = h("div", {}, h("h3", {}, `Replay of the ${hhmm(summary.timestamp.start)} run`, h("span", { class: "n" }, (OUTCOME[t.script_execution] || [t.script_execution])[0])), list);
+    const box = h("div", {}, h("h3", {}, tr("Replay of the {time} run", { time: hhmm(summary.timestamp.start) }), h("span", { class: "n" }, (outcome(t.script_execution) || [t.script_execution])[0])), list);
     li?.closest("ul")?.after(box);
     this._replaying = { box, timers: [], marked: new Set() };
     rows.forEach((r, i) => this._replaying.timers.push(setTimeout(() => this._replayStep(n, r, rows), i * 650)));
@@ -1362,18 +1364,21 @@ class HomeNodesPanel extends HTMLElement {
   }
 
   _condLabel(c, one) {
-    if (!c || typeof c !== "object" || Array.isArray(c)) return typeof c === "string" ? "template" : "conditions";
+    if (!c || typeof c !== "object" || Array.isArray(c)) return typeof c === "string" ? tr("template") : tr("conditions");
     const name = (id) => this._nodes.get(id)?.label || id;
     const ents = one ? [one] : this._graph.resolve(c.entity_id || []);
     const who = ents.map(name).join(", ");
     switch (c.condition) {
-      case "trigger": return `trigger should be “${asList(c.id).join("” or “")}”`;
-      case "state": return `${who} should be ${asList(c.state).join(" or ")}${c.for ? ` for ${typeof c.for === "string" ? c.for : JSON.stringify(c.for)}` : ""}`;
-      case "numeric_state": return `${who} should be${c.above != null ? ` above ${c.above}` : ""}${c.below != null ? ` below ${c.below}` : ""}`;
-      case "time": return `time should be ${[c.after, c.before].map((x) => (x || "").replace(/:00$/, "")).join("–")}`;
-      case "template": return "template";
+      case "trigger": return tr("trigger should be “{ids}”", { ids: asList(c.id).join(`” ${tr("or")} “`) });
+      case "state": {
+        const should = tr("{who} should be {state}", { who, state: asList(c.state).join(` ${tr("or")} `) });
+        return c.for ? tr("{condition} for {duration}", { condition: should, duration: typeof c.for === "string" ? c.for : JSON.stringify(c.for) }) : should;
+      }
+      case "numeric_state": return tr("{who} should be {range}", { who, range: [c.above != null ? tr("above {n}", { n: c.above }) : null, c.below != null ? tr("below {n}", { n: c.below }) : null].filter(Boolean).join(" ") });
+      case "time": return tr("time should be {span}", { span: [c.after, c.before].map((x) => (x || "").replace(/:00$/, "")).join("–") });
+      case "template": return tr("template");
       case "and": case "or": case "not": return c.condition;
-      default: return `${c.condition || "condition"} ${who}`.trim();
+      default: return `${c.condition || tr("condition")} ${who}`.trim();
     }
   }
 
@@ -1429,23 +1434,23 @@ class HomeNodesPanel extends HTMLElement {
         let t = instantIn({ ...z, ...wall }, this._tz);
         if (t <= now.getTime()) t = instantIn({ ...z, ...wall, day: z.day + 1 }, this._tz);
         const at = new Date(t);
-        if (at.getTime() <= horizon) items.push({ at, o, why: `Set by ${this._nodes.get(dt)?.label || dt}` });
+        if (at.getTime() <= horizon) items.push({ at, o, why: tr("Set by {name}", { name: this._nodes.get(dt)?.label || dt }) });
       }
     }
     items.sort((a, b) => a.at.getTime() - b.at.getTime());
-    d.append(h("div", { class: "kicker" }, icon("clock", 16), "The next 12 hours"), h("h2", {}, "Up next"));
+    d.append(h("div", { class: "kicker" }, icon("clock", 16), tr("The next 12 hours")), h("h2", {}, tr("Up next")));
     const note = (o) => {
-      if (states[o.id]?.state === "off") return h("span", { class: "sub" }, "Disabled, so it won't run");
-      if (o.blocked?.length) return h("span", { class: "sub no" }, `Blocked now: ${o.blocked.join("; ")}`);
+      if (states[o.id]?.state === "off") return h("span", { class: "sub" }, tr("Disabled, so it won't run"));
+      if (o.blocked?.length) return h("span", { class: "sub no" }, tr("Blocked now: {reasons}", { reasons: o.blocked.join("; ") }));
       return null;
     };
     d.append(h("ul", {}, items.length ? items.map(({ at, o, why }) => h("li", { tabindex: "0", onclick: () => this._selectNode(o.id, true) },
       h("span", { class: "big" }, hhmm(at)), h("span", { class: "name" }, o.label, why ? h("span", { class: "sub" }, why) : null, note(o)), h("span", { class: "val" }, capital(inFmt(at.getTime() - now.getTime())))))
-      : h("li", { class: "static" }, "Nothing is scheduled in the next 12 hours.")));
+      : h("li", { class: "static" }, tr("Nothing is scheduled in the next 12 hours."))));
     if (repeating.length) {
       const rows = repeating.flatMap(({ n, owners, next }) => owners.map((o) => h("li", { tabindex: "0", onclick: () => this._selectNode(o.id, true) },
         icon("repeat", 16), h("span", { class: "name" }, o.label, h("span", { class: "sub" }, capital(n.label)), note(o)), h("span", { class: "val" }, next ? capital(inFmt(next.getTime() - now.getTime())) : ""))));
-      d.append(...this._section("Repeating", rows));
+      d.append(...this._section(tr("Repeating"), rows));
     }
   }
   // ------------------------------------------------------------ heat
@@ -1476,12 +1481,12 @@ class HomeNodesPanel extends HTMLElement {
     if (!this._defined.has(n.id)) {
       const id = n.kind === "automation" ? n.cfgId : n.id.slice(7);
       const ask = async () => {
-        if (!id) return "YAML";
-        if (!this._hass.callApi) return "Unknown";
-        try { await this._hass.callApi("GET", `config/${n.kind}/config/${encodeURIComponent(id)}`); return "The UI"; }
+        if (!id) return tr("YAML");
+        if (!this._hass.callApi) return tr("Unknown");
+        try { await this._hass.callApi("GET", `config/${n.kind}/config/${encodeURIComponent(id)}`); return tr("The UI"); }
         catch (e) {
           const status = e?.status_code ?? e?.status;
-          return status === 404 || /not ?found/i.test(String(e?.body?.message ?? e?.error ?? e?.message ?? "")) ? "YAML" : "Unknown";
+          return status === 404 || /not ?found/i.test(String(e?.body?.message ?? e?.error ?? e?.message ?? "")) ? tr("YAML") : tr("Unknown");
         }
       };
       this._defined.set(n.id, ask());
@@ -1495,9 +1500,9 @@ class HomeNodesPanel extends HTMLElement {
     const label = (n) => n.label;
     const users = (n) => [...new Set(n.wires.map((e) => (e.a === n ? e.b : e.a)).filter(isOwner).map(label))].join(", ");
     for (const n of this._nodes.values()) {
-      if (n.missing) out.push({ sev: "error", kind: "Broken references", id: [...n.wires.map((e) => (e.a === n ? e.b : e.a)).filter(isOwner)][0]?.id || n.id, text: `${n.label} doesn't exist`, note: `used by ${users(n)}` });
-      if (isOwner(n) && (n.broken || states[n.id]?.state === "unavailable")) out.push({ sev: "error", kind: "Automations that can't load", id: n.id, text: label(n), note: n.broken || "unavailable" });
-      if (isOwner(n) && n.blueprint?.error) out.push({ sev: "warn", kind: "Blueprints that can't be read", id: n.id, text: label(n), note: `${n.blueprint.path}: ${n.blueprint.error}` });
+      if (n.missing) out.push({ sev: "error", kind: tr("Broken references"), id: [...n.wires.map((e) => (e.a === n ? e.b : e.a)).filter(isOwner)][0]?.id || n.id, text: tr("{name} doesn't exist", { name: n.label }), note: tr("used by {names}", { names: users(n) }) });
+      if (isOwner(n) && (n.broken || states[n.id]?.state === "unavailable")) out.push({ sev: "error", kind: tr("Automations that can't load"), id: n.id, text: label(n), note: n.broken || "unavailable" });
+      if (isOwner(n) && n.blueprint?.error) out.push({ sev: "warn", kind: tr("Blueprints that can't be read"), id: n.id, text: label(n), note: `${n.blueprint.path}: ${n.blueprint.error}` });
     }
     // Listed once per entity, with everything that waits on it.
     for (const n of this._nodes.values()) {
@@ -1505,7 +1510,7 @@ class HomeNodesPanel extends HTMLElement {
       const st = states[n.id];
       if (!st || !["unavailable", "unknown"].includes(st.state)) continue;
       const watchers = n.wires.filter((e) => e.a === n && e.role !== "action").map((e) => e.b).filter(isOwner);
-      if (watchers.length) out.push({ sev: "warn", kind: "Waiting on something unavailable", id: n.id, text: `${n.label} is ${st.state}`, note: `${watchers.length === 1 ? "waited on by" : `${watchers.length} automations wait on it:`} ${watchers.map(label).join(", ")}` });
+      if (watchers.length) out.push({ sev: "warn", kind: tr("Waiting on something unavailable"), id: n.id, text: tr("{name} is {state}", { name: n.label, state: st.state }), note: watchers.length === 1 ? tr("waited on by {names}", { names: watchers.map(label).join(", ") }) : tr("{n} automations wait on it: {names}", { n: watchers.length, names: watchers.map(label).join(", ") }) });
     }
     const autos = [...this._nodes.values()].filter((n) => n.kind === "automation");
     const sets = new Map(autos.map((n) => [n, {
@@ -1518,15 +1523,15 @@ class HomeNodesPanel extends HTMLElement {
       const trig = [...A.t].filter((x) => B.t.has(x)), act = [...A.a].filter((x) => B.a.has(x));
       if (trig.length && act.length && states[autos[i].id]?.state !== "off" && states[autos[j].id]?.state !== "off") {
         const nm = (id) => this._nodes.get(id)?.label || id;
-        out.push({ sev: "warn", kind: "Possible duplicates", id: autos[i].id, text: `${label(autos[i])} and ${label(autos[j])}`, note: `both act on ${act.map(nm).join(", ")} on ${trig.map(nm).join(", ")}` });
+        out.push({ sev: "warn", kind: tr("Possible duplicates"), id: autos[i].id, text: tr("{a} and {b}", { a: label(autos[i]), b: label(autos[j]) }), note: tr("both act on {targets} on {triggers}", { targets: act.map(nm).join(", "), triggers: trig.map(nm).join(", ") }) });
       }
     }
     for (const n of autos) {
       const st = states[n.id];
       if (!st || st.state === "unavailable") continue;
-      if (st.state === "off") { out.push({ sev: "info", kind: "Disabled", id: n.id, text: label(n) }); continue; }
+      if (st.state === "off") { out.push({ sev: "info", kind: tr("Disabled"), id: n.id, text: label(n) }); continue; }
       const last = st.attributes?.last_triggered;
-      if (!last || Date.now() - Date.parse(last) > 30 * 86400e3) out.push({ sev: "info", kind: "Not run in 30 days", id: n.id, text: label(n), note: last ? `last ran ${ago(last)}` : "has never run" });
+      if (!last || Date.now() - Date.parse(last) > 30 * 86400e3) out.push({ sev: "info", kind: tr("Not run in 30 days"), id: n.id, text: label(n), note: last ? tr("last ran {ago}", { ago: ago(last) }) : tr("has never run") });
     }
     return out.concat(this._fights || []);
   }
@@ -1558,7 +1563,14 @@ class HomeNodesPanel extends HTMLElement {
       }
     }
     const nm = (id) => this._nodes.get(id)?.label || id;
-    this._fights = [...found.values()].map((f) => ({ sev: "warn", kind: "Fighting in the last day", id: f.a, text: `${nm(f.a)} vs ${nm(f.b)}`, note: `flipped ${nm(f.id)} within a minute of each other ${f.n} time${f.n > 1 ? "s" : ""}` }));
+    this._fights = [...found.values()].map((f) => ({ sev: "warn", kind: tr("Fighting in the last day"), id: f.a, text: tr("{a} vs {b}", { a: nm(f.a), b: nm(f.b) }), note: f.n > 1 ? tr("flipped {name} within a minute of each other {n} times", { name: nm(f.id), n: f.n }) : tr("flipped {name} within a minute of each other {n} time", { name: nm(f.id), n: f.n }) }));
+  }
+
+  /** "3 problems to look at, and 1 note." @param {number} problems @param {number} notes */
+  _healthSummary(problems, notes) {
+    const p = problems === 1 ? tr("1 problem to look at") : tr("{n} problems to look at", { n: problems });
+    if (!notes) return tr("{problems}.", { problems: p });
+    return tr("{problems}, and {notes}.", { problems: p, notes: notes === 1 ? tr("1 note") : tr("{n} notes", { n: notes }) });
   }
 
   async _showHealth() {
@@ -1566,20 +1578,20 @@ class HomeNodesPanel extends HTMLElement {
     this._selected = null;
     this._exitFocus();
     const render = (pending) => {
-      d.replaceChildren(this._closeBtn(), h("div", { class: "kicker" }, icon("pulse", 16), "Checks across every automation"), h("h2", {}, "Health"));
+      d.replaceChildren(this._closeBtn(), h("div", { class: "kicker" }, icon("pulse", 16), tr("Checks across every automation")), h("h2", {}, tr("Health")));
       const issues = this._issues();
       const problems = issues.filter((i) => i.sev !== "info").length, notes = issues.length - problems;
-      d.append(h("p", { class: "desc" }, problems ? `${problems} ${problems === 1 ? "problem" : "problems"} to look at${notes ? `, and ${notes} ${notes === 1 ? "note" : "notes"}` : ""}.` : "Nothing needs attention."));
+      d.append(h("p", { class: "desc" }, problems ? this._healthSummary(problems, notes) : tr("Nothing needs attention.")));
       for (const k of [...new Set(issues.map((i) => i.kind))]) {
         const list = issues.filter((i) => i.kind === k);
-        d.append(...this._section(k, list.map((i) => h("li", { tabindex: "0", onclick: () => this._selectNode(i.id, true), title: { error: "Problem", warn: "Warning", info: "Note" }[i.sev] },
+        d.append(...this._section(k, list.map((i) => h("li", { tabindex: "0", onclick: () => this._selectNode(i.id, true), title: { error: tr("Problem"), warn: tr("Warning"), info: tr("Note") }[i.sev] },
           h("span", { class: `sev ${i.sev}` }), h("span", { class: "name" }, i.text, i.note ? h("span", { class: "sub" }, capital(i.note)) : null)))));
       }
       if (pending) d.append(h("p", { class: "note" }, pending));
       this._refreshHealth();
     };
-    render("Checking the last 24 hours for automations fighting each other…");
-    try { await this._loadFights(); render(null); } catch (_) { this._fights = []; render("Checking for fights needs Home Assistant's logbook, which isn't enabled."); }
+    render(tr("Checking the last 24 hours for automations fighting each other…"));
+    try { await this._loadFights(); render(null); } catch (_) { this._fights = []; render(tr("Checking for fights needs Home Assistant's logbook, which isn't enabled.")); }
   }
   // ------------------------------------------------------------ history
 
@@ -1595,25 +1607,25 @@ class HomeNodesPanel extends HTMLElement {
   }
 
   _buildHistBar() {
-    this._histRange = h("select", { title: "How far back", "aria-label": "How far back", onchange: () => this._loadHistory(Number(this._histRange.value)) },
-      [[1, "Last hour"], [6, "Last 6 hours"], [24, "Last 24 hours"], [72, "Last 3 days"]].map(([v, l]) => h("option", { value: v, selected: v === 24 }, l)));
-    this._histSpeed = h("select", { title: "Playback speed", "aria-label": "Playback speed" },
-      [[60, "1 minute a second"], [300, "5 minutes a second"], [1800, "30 minutes a second"], [7200, "2 hours a second"]].map(([v, l]) => h("option", { value: v, selected: v === 300 }, l)));
+    this._histRange = h("select", { title: tr("How far back"), "aria-label": tr("How far back"), onchange: () => this._loadHistory(Number(this._histRange.value)) },
+      [[1, tr("Last hour")], [6, tr("Last 6 hours")], [24, tr("Last 24 hours")], [72, tr("Last 3 days")]].map(([v, l]) => h("option", { value: v, selected: v === 24 }, l)));
+    this._histSpeed = h("select", { title: tr("Playback speed"), "aria-label": tr("Playback speed") },
+      [[60, tr("1 minute a second")], [300, tr("5 minutes a second")], [1800, tr("30 minutes a second")], [7200, tr("2 hours a second")]].map(([v, l]) => h("option", { value: v, selected: v === 300 }, l)));
     this._histPlayBtn = h("button", { class: "btn primary", onclick: () => (this._histTimer ? this._histPause() : this._histPlay()) });
     this._setPlayLabel(false);
     this._histTime = h("span", { class: "htime" });
     this._histNote = h("span", { class: "hnote" });
-    this._histSlider = h("input", { type: "range", min: 0, max: 1, value: 1, step: 1, "aria-label": "Time", oninput: () => { this._histPause(); this._histSeek(this._hist.start + Number(this._histSlider.value) * 1000); } });
+    this._histSlider = h("input", { type: "range", min: 0, max: 1, value: 1, step: 1, "aria-label": tr("Time"), oninput: () => { this._histPause(); this._histSeek(this._hist.start + Number(this._histSlider.value) * 1000); } });
     this._histStrip = h("canvas", { height: 28 });
     this._histBar = h("div", { class: "histbar" },
       h("div", { class: "row" }, this._histPlayBtn, this._histTime, this._histSpeed, this._histRange, h("span", { class: "grow" }), this._histNote,
-        h("button", { class: "btn outline", onclick: () => this._exitHistory() }, "Back to live")),
-      h("div", { class: "scrub", title: "Each mark is an automation run" }, this._histStrip, this._histSlider));
+        h("button", { class: "btn outline", onclick: () => this._exitHistory() }, tr("Back to live"))),
+      h("div", { class: "scrub", title: tr("Each mark is an automation run") }, this._histStrip, this._histSlider));
     this._stage.append(this._histBar);
   }
   async _loadHistory(hours) {
     this._histPause();
-    this._histNote.textContent = "Loading…";
+    this._histNote.textContent = tr("Loading…");
     const end = Date.now(), start = end - hours * 3600e3;
     const iso = (t) => new Date(t).toISOString();
     const ids = [...this._nodes.values()].filter((n) => this._hass.states[n.id]).map((n) => n.id);
@@ -1649,7 +1661,7 @@ class HomeNodesPanel extends HTMLElement {
     this._hist = { start, end, series, events, exact: !!lb, T: end, idx: 0, cache: new Map(), lastRun: new Map() };
     this._histSlider.max = String(Math.round((end - start) / 1000));
     const runs = events.filter((e) => e.kind === "run").length;
-    this._histNote.textContent = lb ? `${runs} runs` : `≈${runs} runs · causes need HA's logbook`;
+    this._histNote.textContent = lb ? tr("{n} runs", { n: runs }) : tr("≈{n} runs · causes need HA's logbook", { n: runs });
     this._drawStrip();
     this._histSeek(start);
   }

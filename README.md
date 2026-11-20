@@ -9,6 +9,9 @@ light up after it.
 > integration anyone can install from HACS. It is not published yet; see
 > [ROADMAP.md](ROADMAP.md).
 
+**Documentation:** [joerdav.github.io/homenodes](https://joerdav.github.io/homenodes/), built
+from [`docs/`](docs/) (`npm run docs` serves it locally).
+
 ## Installing
 
 HomeNodes needs Home Assistant 2024.12 or later.
@@ -97,6 +100,9 @@ nix develop -c pytest        # with Nix: Node, TypeScript, ruff and the harness,
 pip install -r requirements_test.txt ruff==0.17.4 && pytest   # or with pip, on Python 3.14
 ruff check . && ruff format --check .
 ```
+
+The documentation site needs MkDocs (`pip install -r requirements_docs.txt`); `npm run docs`
+takes fresh screenshots from the harness and serves it at `http://127.0.0.1:8000/`.
 
 ## Licence
 

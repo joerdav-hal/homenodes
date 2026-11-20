@@ -32,12 +32,13 @@ Then the facts:
 ## Why it did or didn't run
 
 **Recent runs** lists the runs Home Assistant has kept (the last five, unless the automation sets
-`trace: stored_traces`), with what started each and how it ended: *Ran*, *Blocked*, *Error* and
+`stored_traces` under `trace:`), with what started each and how it ended: *Ran*, *Blocked*, *Error* and
 so on.
 
 Select a run to replay it on the map. Each step lights up in turn: the trigger, each condition in
-green or red, and each action. The side panel lists the steps with how long each took, and where
-it stopped.
+green or red, and each action. The side panel lists the steps in order: conditions with
+*Passed* or *Failed* and what the entity was, which option a choose took, errors, and for the rest
+how long after the start each happened.
 
 ## What it listens to and acts on
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A documentation site, with screenshots taken from the made-up house on every build.
+
 - Much faster on large installs: at 2,000 automations a state change costs a quarter of what it
   did, loading half, and graph building a fifth. Off-screen parts of the map are skipped until
   you pan to them.

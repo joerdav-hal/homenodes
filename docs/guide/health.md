@@ -29,5 +29,5 @@ when each next fires.
 
 ![Up next](../images/upnext.png)
 
-Up next shows what *could* run: an automation scheduled for 07:00 that is also blocked by a
-condition is still listed.
+Up next shows what *could* run, and says when something gets in the way: a disabled automation is
+marked *Disabled, so it won't run*, and one whose conditions would block it right now says why.

@@ -101,7 +101,9 @@ change 24 → 5.6 ms, the clock tick 34 → 7 ms, focusing an automation 461 →
 
 ## 7. Docs and accessibility
 
-- [ ] A README with a demo, settings, troubleshooting and limitations.
+- [x] A documentation site (MkDocs Material on GitHub Pages, built strictly in CI): installing,
+  options, a guide to the map, troubleshooting, privacy. Screenshots are taken from the harness
+  on every build, so they show the current version and never a real home.
 - [ ] Keyboard navigation between nodes, and a list view for screen readers.
 
 ## 8. Rollout

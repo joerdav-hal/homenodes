@@ -16,6 +16,7 @@ body.dark { --primary-background-color: #111111; --card-background-color: #1c1c1
 //   ?tz=<IANA zone> (Home Assistant's) ?timeformat=24|am_pm|language|system ?showtime=server|local ?noblueprints
 //   The integration's options: ?controls=0 ?grouping=area|label|category|tag ?heatdays=<n> ?hide=<label id>,…
 //   ?hostile (names that try to be markup, script and more) ?check (click through and report; see browser-check.mjs)
+//   ?house=private (dev/private/house.json) ?fresh (ignore its saved layout) ?fit (fit the map to screen)
 //   ?bench (time loading, repaints and panning; see browser-bench.mjs) ?height=<px> (headless
 //   screenshots: Chrome's viewport is shorter than the image it saves)
 import { HOSTILE, makeHostile, makeHouse } from "./fake-house.js";
@@ -26,12 +27,14 @@ await import(`../custom_components/homenodes/frontend/homenodes-panel.js?t=${Dat
 
 const q = new URLSearchParams(location.search);
 const now = Date.now();
-const plainHouse = makeHouse({ now, copies: Number(q.get("copies") || 1) });
+// ?house=private loads dev/private/house.json (gitignored), a house in makeHouse's shape with an
+// optional userData, to look into a real install's map locally. Never commit one.
+const plainHouse = q.get("house") === "private" ? await (await fetch("./private/house.json")).json() : makeHouse({ now, copies: Number(q.get("copies") || 1) });
 const house = q.has("hostile") ? makeHostile(plainHouse) : plainHouse;
 let states = Object.fromEntries(house.states.map((s) => [s.entity_id, s]));
 const subs = {};
 const inRange = (m, t) => t >= Date.parse(m.start_time) / 1000 && t <= Date.parse(m.end_time) / 1000;
-const userData = {};
+const userData = q.has("fresh") ? {} : { ...(plainHouse.userData || {}) };
 const conn = {
   async sendMessagePromise(m) {
     switch (m.type) {
@@ -134,6 +137,7 @@ document.getElementById("play").onclick = async () => {
     el._view = { k, x: r.width / 2 - (n.x + n.w / 2) * k, y: r.height / 2 - (n.y + n.h / 2) * k };
     el._applyView();
   }
+  if (q.has("fit")) el._fit();
   if (q.get("open") === "health") el._showHealth();
   if (q.get("open") === "upnext") el._showUpNext();
   if (q.get("open") === "history") el._enterHistory();

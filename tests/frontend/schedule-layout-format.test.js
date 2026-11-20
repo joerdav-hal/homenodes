@@ -155,3 +155,17 @@ test("yaml quotes only what needs quoting", () => {
   assert.equal(yaml({ t: "{{ x }}" }), 't: "{{ x }}"');
   assert.equal(yaml("two\nlines"), "|\n  two\n  lines");
 });
+
+test("pack places every box without overlap, near the shape asked for", async () => {
+  const { pack } = await import("../../custom_components/homenodes/frontend/pack.js");
+  /** @type {{ w: number, h: number, x?: number, y?: number }[]} */
+  const boxes = Array.from({ length: 40 }, (_, i) => ({ w: 100 + ((i * 37) % 300), h: 60 + ((i * 53) % 400) }));
+  const { w, h, fill } = pack(boxes, 1.6);
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const { x: ax = 0, y: ay = 0, w: aw, h: ah } = boxes[i], { x: bx = 0, y: by = 0, w: bw, h: bh } = boxes[j];
+    const hit = ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
+    assert.ok(!hit, `boxes ${i} and ${j} overlap`);
+  }
+  assert.ok(fill > 0.75, `fill ${fill}`);
+  assert.ok(w / h > 1.1 && w / h < 2.4, `aspect ${w / h}`);
+});

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Zones are packed with Mapbox's potpack instead of in rows, so a fresh or tidied map is denser
+  and closer to a screen's shape (a real install: 36% of the sheet used before, 45% after).
+- A collapsed area opens with one click instead of two.
+
 - New automations and entities join their own zone on a saved map, and the zones below move down
   to make room, instead of being dropped at the bottom left where their zone's outline would
   stretch across others. **⋯ → Tidy the layout** repairs a map saved before this.

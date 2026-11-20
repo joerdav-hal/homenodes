@@ -45,8 +45,8 @@ half each. Select one to see that run.
 
 Automations are gathered into zones by area, label, category or name tag (**View → Group by**),
 with the entities they use next to them. Select a zone's title to collapse it into a single card
-that counts its automations, what's on and what ran this hour; double-click (or double-tap) the
-card to open it again. **⋯ → Collapse every area** and **Expand every area** do them all.
+that counts its automations, what's on and what ran this hour; click or tap the card to open it
+again. **⋯ → Collapse every area** and **Expand every area** do them all.
 
 ## Moving around
 

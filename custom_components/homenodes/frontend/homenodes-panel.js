@@ -946,7 +946,7 @@ class HomeNodesPanel extends HTMLElement {
   _bindPointer() {
     const svg = this._svg;
     const pts = new Map();
-    let drag = null, pinch = null, lastTap = { id: null, t: 0 };
+    let drag = null, pinch = null;
     svg.addEventListener("wheel", (e) => {
       e.preventDefault();
       if (e.ctrlKey || Math.abs(e.deltaY) > 40 || e.deltaMode) this._zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
@@ -1004,9 +1004,8 @@ class HomeNodesPanel extends HTMLElement {
       if (d.cluster) return this._toggleCluster(d.cluster);
       if (!d.n) return this._select(null);
       if (d.hit && this._mode === "live") return this._toggleEntity(d.n.id);
-      const now = performance.now();
-      if (d.n.kind === "group" && lastTap.id === d.n.id && now - lastTap.t < 400) { lastTap = { id: null, t: 0 }; return this._toggleCluster(d.n.cluster); }
-      lastTap = { id: d.n.id, t: now };
+      // A collapsed area opens on one click; there is nothing else to do with it.
+      if (d.n.kind === "group") return this._toggleCluster(d.n.cluster);
       this._select(d.n.id);
     };
     svg.addEventListener("pointerup", end);

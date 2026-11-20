@@ -1,6 +1,7 @@
 // Placing nodes: one block of columns per area, and the curve each wire takes.
 
 import { SIZE } from "./constants.js";
+import { pack } from "./pack.js";
 
 /** @typedef {import("./graph.js").GraphNode} GraphNode */
 /** @typedef {import("./graph.js").GraphEdge} GraphEdge */
@@ -10,8 +11,9 @@ const COL = 340, GAP_Y = 16;
 
 /** @typedef {{ name: string | undefined, members: GraphNode[], w: number, h: number }} Block */
 
-// Gaps between zones: room for the plate's padding and the title above it.
-const ZONE_GAP_X = 200, ZONE_GAP_Y = 240;
+// Gaps between zones: room for the plate's padding and the title above it. Sheets aim for a
+// landscape screen's shape.
+const ZONE_GAP_X = 200, ZONE_GAP_Y = 240, SHEET_ASPECT = 1.6;
 
 /**
  * Each cluster is a block of columns: what feeds the automations, the automations (and the
@@ -34,7 +36,7 @@ export function layout(nodes, edges, fixed = new Map()) {
   if (!free.length) return;
   const rank = ranks(nodes, edges, byId);
   if (free.length < nodes.length) return placeNew(nodes, free, edges, byId, rank);
-  shelve(blocksOf(nodes, edges, rank), 0, 0);
+  arrange(blocksOf(nodes, edges, rank), 0, 0);
 }
 
 /**
@@ -108,20 +110,14 @@ function blocksOf(nodes, edges, rank) {
 }
 
 /**
- * Shelf-pack blocks, tallest first, into a roughly landscape sheet starting at (x0, y0).
- * @param {Block[]} blocks @param {number} x0 @param {number} y0 @param {number} [width] The sheet's width, if one is set.
+ * Packs blocks into a sheet starting at (x0, y0), each with room around it for its plate and title.
+ * @param {Block[]} blocks @param {number} x0 @param {number} y0
  */
-function shelve(blocks, x0, y0, width) {
-  blocks.sort((a, b) => b.h - a.h);
-  const area = blocks.reduce((s, b) => s + (b.w + ZONE_GAP_X) * (b.h + ZONE_GAP_Y), 0);
-  const maxW = width ?? Math.max(...blocks.map((b) => b.w), Math.sqrt(area * 1.8));
-  let x = 0, y = 0, rowH = 0;
-  for (const b of blocks) {
-    if (x > 0 && x + b.w > maxW) { x = 0; y += rowH + ZONE_GAP_Y; rowH = 0; }
-    for (const n of b.members) { n.x = Math.round(n.x + x + x0); n.y = Math.round(n.y + y + y0); }
-    x += b.w + ZONE_GAP_X;
-    rowH = Math.max(rowH, b.h);
-  }
+function arrange(blocks, x0, y0) {
+  /** @type {(import("./pack.js").PackBox & { b: Block })[]} */
+  const boxes = blocks.map((b) => ({ w: b.w + ZONE_GAP_X, h: b.h + ZONE_GAP_Y, b }));
+  pack(boxes, SHEET_ASPECT);
+  for (const { b, x = 0, y = 0 } of boxes) for (const n of b.members) { n.x = Math.round(n.x + x + x0); n.y = Math.round(n.y + y + y0); }
 }
 
 /**
@@ -174,10 +170,7 @@ function placeNew(nodes, free, edges, byId, rank) {
     }
     sheet.y1 = Math.max(sheet.y1, ...[...zone.values()].map((b) => b.y + b.h));
   }
-  if (orphans.length) {
-    const width = Number.isFinite(sheet.x1) ? sheet.x1 - sheet.x0 : undefined;
-    shelve(blocksOf(orphans, edges, rank), Number.isFinite(sheet.x0) ? sheet.x0 : 0, Number.isFinite(sheet.y1) ? sheet.y1 + ZONE_GAP_Y : 0, width);
-  }
+  if (orphans.length) arrange(blocksOf(orphans, edges, rank), Number.isFinite(sheet.x0) ? sheet.x0 : 0, Number.isFinite(sheet.y1) ? sheet.y1 + ZONE_GAP_Y : 0);
   // Last, nudge new nodes off anything they still overlap.
   for (let it = 0; it < 200; it++) {
     let moved = false;
